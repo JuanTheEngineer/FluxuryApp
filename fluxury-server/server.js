@@ -14,17 +14,18 @@ app.use(express.json())
 app.use('/beats', express.static('beats'))
 
 app.post('/api/download', async (req, res) => {
-    const { url } = req.body
+    const { url, name } = req.body
     if (!url) return res.status(400).send('Missing YouTube URL')
 
     try {
-        const result = await downloadBeat(url)
+        const result = await downloadBeat(url, name)
         res.status(200).json(result)
     } catch (err) {
         console.error(err)
         res.status(500).send('Failed to download audio')
     }
 })
+
 
 
 

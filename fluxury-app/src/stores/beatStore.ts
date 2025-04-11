@@ -8,17 +8,19 @@ interface Beat {
 
 export const useBeatStore = defineStore('beats', {
     state: () => ({
-        beats: [] as Beat[]
+        beats: [] as Beat[],
+        selectedBeat: null as Beat | null
     }),
     actions: {
         async fetchBeats() {
             const res = await getBeats()
-            console.log('🔁 Loaded beats from server:', res.data)
             this.beats = res.data
         },
         addBeat(beat: Beat) {
-            console.log('🎵 Added beat:', beat)
             this.beats.push(beat)
+        },
+        selectBeat(beat: Beat) {
+            this.selectedBeat = beat
         }
     }
 })
