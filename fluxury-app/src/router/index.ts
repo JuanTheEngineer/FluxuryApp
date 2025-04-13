@@ -14,12 +14,12 @@ const routes = [
     {
         path: '/sessions',
         name: 'Sessions',
-        component: () => import('../views/HomeView.vue')
+        component: () => import('../views/SessionBrowserView.vue')
     },
     {
         path: '/session/:id',
         name: 'SessionEditor',
-        component: () => import('../views/BeatBrowserView.vue')
+        component: () => import('../views/SessionEditorView.vue')
     }
 ]
 

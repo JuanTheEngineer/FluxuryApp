@@ -4,6 +4,7 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/FluxuryApp.iml" filepath="$PROJECT_DIR$/FluxuryApp.iml" />
       <module fileurl="file://$PROJECT_DIR$/fluxury-app/fluxury-app.iml" filepath="$PROJECT_DIR$/fluxury-app/fluxury-app.iml" />
+      <module fileurl="file://$PROJECT_DIR$/fluxury-infra/fluxury-infra.iml" filepath="$PROJECT_DIR$/fluxury-infra/fluxury-infra.iml" />
       <module fileurl="file://$PROJECT_DIR$/fluxury-server.iml" filepath="$PROJECT_DIR$/fluxury-server.iml" />
     </modules>
   </component>

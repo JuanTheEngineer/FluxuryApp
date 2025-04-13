@@ -1,7 +1,7 @@
 <template>
   <div
       v-if="selectedBeat"
-      class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg flex flex-col gap-2"
+      class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg flex flex-col gap-2 transition-all"
   >
     <div class="flex justify-between items-center">
       <strong>{{ selectedBeat.name }}</strong>
@@ -24,6 +24,12 @@
       <button @click="toggleLoop">
         {{ isLooping ? '🔁 Looping' : '⏭ Once' }}
       </button>
+    </div>
+    <div
+        v-else
+        class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow text-center text-gray-400"
+    >
+      No Song Selected
     </div>
   </div>
 </template>
