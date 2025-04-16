@@ -9,9 +9,9 @@ const account = process.env.CDK_DEFAULT_ACCOUNT
 const region = process.env.CDK_DEFAULT_REGION || 'us-east-1'
 
 if (!account) {
-    throw new Error('CDK_DEFAULT_ACCOUNT not set. Run "aws configure" or export it manually.')
+  throw new Error('CDK_DEFAULT_ACCOUNT not set. Run "aws configure" or export it manually.')
 }
 
 new SessionStack(app, 'SessionStack', {
-    env: { account, region }
+  env: { account, region },
 })

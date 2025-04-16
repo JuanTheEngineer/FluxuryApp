@@ -1,11 +1,7 @@
 <template>
   <div class="relative p-8" :style="backgroundStyle">
     <div class="flex justify-between items-center mb-4">
-      <input
-          v-if="editMode"
-          v-model="form.name"
-          class="text-2xl font-bold border px-2"
-      />
+      <input v-if="editMode" v-model="form.name" class="text-2xl font-bold border px-2" />
       <h2 v-else class="text-2xl font-bold">{{ session?.name }}</h2>
 
       <div>
@@ -13,21 +9,18 @@
           {{ editMode ? 'Cancel' : 'Edit' }}
         </button>
         <button
-            v-if="editMode"
-            @click="save"
-            class="ml-2 bg-green-600 text-white px-3 py-1 rounded"
+          v-if="editMode"
+          @click="save"
+          class="ml-2 bg-green-600 text-white px-3 py-1 rounded"
         >
           Save
         </button>
       </div>
     </div>
 
-    <p class="italic">by
-      <input
-          v-if="editMode"
-          v-model="form.author"
-          class="border px-2 py-1"
-      />
+    <p class="italic">
+      by
+      <input v-if="editMode" v-model="form.author" class="border px-2 py-1" />
       <span v-else>{{ session?.author || 'Unknown' }}</span>
     </p>
 
@@ -49,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import {onMounted, ref, reactive, computed, onUnmounted} from 'vue'
+import { onMounted, ref, reactive, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Quill from 'quill'
 import { getBeats } from '../services/api'
@@ -57,7 +50,7 @@ import {
   getSessionById,
   saveSessionMetadata,
   saveSessionScript,
-  getSessionScript
+  getSessionScript,
 } from '../services/sessionApi'
 import BeatPlayer from '../components/BeatPlayer.vue'
 
@@ -77,7 +70,7 @@ const backgroundStyle = computed(() => {
   return {
     backgroundImage: `url(${session.value.image})`,
     backgroundSize: '100px 100px',
-    backgroundRepeat: 'repeat'
+    backgroundRepeat: 'repeat',
   }
 })
 

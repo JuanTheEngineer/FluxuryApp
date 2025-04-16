@@ -21,10 +21,13 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div
-          v-for="session in sortedFilteredSessions"
-          :key="session.id"
-          @click="toggleSelect(session)"
-          :class="['border rounded p-4 cursor-pointer transition', selected?.id === session.id ? 'border-green-500 bg-green-50' : 'hover:border-blue-300']"
+        v-for="session in sortedFilteredSessions"
+        :key="session.id"
+        @click="toggleSelect(session)"
+        :class="[
+          'border rounded p-4 cursor-pointer transition',
+          selected?.id === session.id ? 'border-green-500 bg-green-50' : 'hover:border-blue-300',
+        ]"
       >
         <img :src="session.image || '/default-artwork.jpg'" class="w-full h-40 object-cover mb-2" />
         <h3 class="font-semibold">{{ session.name }}</h3>
@@ -34,10 +37,10 @@
     </div>
 
     <button
-        :disabled="!selected"
-        @click="loadSession"
-        class="px-4 py-2 rounded text-white"
-        :class="selected ? 'bg-green-600 hover:bg-green-700' : 'bg-green-300 cursor-not-allowed'"
+      :disabled="!selected"
+      @click="loadSession"
+      class="px-4 py-2 rounded text-white"
+      :class="selected ? 'bg-green-600 hover:bg-green-700' : 'bg-green-300 cursor-not-allowed'"
     >
       Load Session
     </button>
@@ -49,7 +52,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getSessions } from '../services/api'
+import { getSessions } from '../services/sessionApi'
 import BeatPlayer from '../components/BeatPlayer.vue'
 
 const sessions = ref([])
@@ -64,8 +67,8 @@ onMounted(async () => {
 })
 
 const sortedFilteredSessions = computed(() => {
-  let filtered = sessions.value.filter((s) =>
-      s.name.toLowerCase().includes(search.value.toLowerCase())
+  let filtered = sessions.value.filter(s =>
+    s.name.toLowerCase().includes(search.value.toLowerCase())
   )
   return filtered.sort((a, b) => {
     const valA = a[sortKey.value]

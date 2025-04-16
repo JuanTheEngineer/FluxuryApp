@@ -25,12 +25,12 @@
         {{ isLooping ? '🔁 Looping' : '⏭ Once' }}
       </button>
     </div>
-    <div
-        v-else
-        class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow text-center text-gray-400"
-    >
-      No Song Selected
-    </div>
+  </div>
+  <div
+      v-else
+      class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow text-center text-gray-400"
+  >
+    No Song Selected
   </div>
 </template>
 

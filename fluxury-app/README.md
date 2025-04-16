@@ -12,6 +12,7 @@ Fluxury is a streamlined web application tailored to assist in creating, organiz
 ## 🚀 Getting Started
 
 ### 1. Clone the Repository
+
 ```bash
 git clone <your-repo-url>
 cd fluxury-app
@@ -30,6 +31,7 @@ npm run dev
 ```
 
 Open the application in your browser:
+
 ```
 http://localhost:5173
 ```
@@ -39,6 +41,7 @@ http://localhost:5173
 ## 🛠️ Tech Stack
 
 **Frontend**:
+
 - Vue.js 3 + Vite
 - Vue Router
 - Pinia for state management
@@ -46,6 +49,7 @@ http://localhost:5173
 - Axios for API requests
 
 **Backend** (Next Phase):
+
 - AWS Lambda
 - AWS DynamoDB
 - AWS S3
@@ -94,24 +98,29 @@ To contribute, please create a feature branch and submit a pull request.
 **Happy rapping with Fluxury! 🎤🎶**
 
 ## Project setup
+
 ```
 npm install
 ```
 
 ### Compiles and hot-reloads for development
+
 ```
 npm run serve
 ```
 
 ### Compiles and minifies for production
+
 ```
 npm run build
 ```
 
 ### Lints and fixes files
+
 ```
 npm run lint
 ```
 
 ### Customize configuration
+
 See [Configuration Reference](https://cli.vuejs.org/config/).
