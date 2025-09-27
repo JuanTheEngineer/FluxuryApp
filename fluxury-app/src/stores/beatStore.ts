@@ -1,25 +1,29 @@
 import { defineStore } from 'pinia'
-import { getBeats } from '../services/api'
+import { beatsApi } from '@/api/api-clients'
+import type { ListBeatsResponseContent, BeatSummary } from '@/api/open-api/beat-client'
 
-interface Beat {
-  name: string
-  path: string
-}
-
-export const useBeatStore = defineStore('beats', {
+export const useBeatStore = defineStore('beatStore', {
   state: () => ({
-    beats: [] as Beat[],
-    selectedBeat: null as Beat | null,
+    beats: [] as ListBeatsResponseContent['beats'],
+    selectedBeat: null as BeatSummary | null,
+    isLoading: false,
+    error: null as string | null,
   }),
   actions: {
     async fetchBeats() {
-      const res = await getBeats()
-      this.beats = res.data
+      this.isLoading = true
+      this.error = null
+      try {
+        const res = await beatsApi.listBeats()
+        this.beats = res.data.beats
+      } catch (err) {
+        this.error = 'Failed to load beats'
+        console.error(err)
+      } finally {
+        this.isLoading = false
+      }
     },
-    addBeat(beat: Beat) {
-      this.beats.push(beat)
-    },
-    selectBeat(beat: Beat) {
+    selectBeat(beat: BeatSummary | null) {
       this.selectedBeat = beat
     },
   },

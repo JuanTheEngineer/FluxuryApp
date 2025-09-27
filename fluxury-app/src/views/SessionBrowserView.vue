@@ -11,8 +11,8 @@
       <input v-model="search" placeholder="Search..." class="border px-3 py-2 rounded w-full" />
       <select v-model="sortKey" class="border px-2 py-1 rounded">
         <option value="name">Name</option>
-        <option value="created">Created</option>
-        <option value="modified">Modified</option>
+        <option value="createdTime">Created</option>
+        <option value="modifiedTime">Modified</option>
       </select>
       <button @click="ascending = !ascending" class="text-sm text-blue-600 underline">
         {{ ascending ? '↑ Asc' : '↓ Desc' }}
@@ -21,69 +21,83 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div
-        v-for="session in sortedFilteredSessions"
-        :key="session.id"
-        @click="toggleSelect(session)"
-        :class="[
+          v-for="session in sortedFilteredSessions"
+          :key="session.id"
+          @click="toggleSelect(session)"
+          :class="[
           'border rounded p-4 cursor-pointer transition',
           selected?.id === session.id ? 'border-green-500 bg-green-50' : 'hover:border-blue-300',
         ]"
       >
-        <img :src="session.image || '/default-artwork.jpg'" class="w-full h-40 object-cover mb-2" />
+        <img :src="session.artworkUrl || '/default-artwork.jpg'" class="w-full h-40 object-cover mb-2" />
         <h3 class="font-semibold">{{ session.name }}</h3>
-        <p class="text-sm text-gray-500">by {{ session.author || 'Unknown' }}</p>
-        <p class="text-xs text-gray-400">Last edited {{ formatDate(session.modified) }}</p>
+        <p class="text-xs text-gray-400">Last edited {{ formatDate(session.modifiedTime) }}</p>
       </div>
     </div>
 
     <button
-      :disabled="!selected"
-      @click="loadSession"
-      class="px-4 py-2 rounded text-white"
-      :class="selected ? 'bg-green-600 hover:bg-green-700' : 'bg-green-300 cursor-not-allowed'"
+        :disabled="!selected"
+        @click="loadSession"
+        class="px-4 py-2 rounded text-white"
+        :class="selected ? 'bg-green-600 hover:bg-green-700' : 'bg-green-300 cursor-not-allowed'"
     >
       Load Session
     </button>
 
-    <BeatPlayer v-if="selected?.beat" />
+    <BeatPlayer :beatUrl="selected?.beatUrl" v-if="selected?.beatUrl" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getSessions } from '../services/sessionApi'
-import BeatPlayer from '../components/BeatPlayer.vue'
+import { sessionsApi } from '@/api/api-clients'
+import BeatPlayer from '@/components/BeatPlayer.vue'
+import type { SessionSummary, GetSessionResponseContent } from '@/api/open-api/session-client'
 
-const sessions = ref([])
-const selected = ref(null)
+const sessions = ref<SessionSummary[]>([])
+const selected = ref<GetSessionResponseContent | null>(null)
 const search = ref('')
-const sortKey = ref('modified')
+const sortKey = ref<'name' | 'createdTime' | 'modifiedTime'>('modifiedTime')
 const ascending = ref(false)
 const router = useRouter()
 
 onMounted(async () => {
-  sessions.value = await getSessions()
+  try {
+    const res = await sessionsApi.listSessions()
+    sessions.value = res.data.sessions
+  } catch (err) {
+    console.error('Failed to load sessions:', err)
+  }
 })
 
 const sortedFilteredSessions = computed(() => {
-  let filtered = sessions.value.filter(s =>
-    s.name.toLowerCase().includes(search.value.toLowerCase())
+  const filtered = sessions.value.filter((s) =>
+      s.name.toLowerCase().includes(search.value.toLowerCase())
   )
-  return filtered.sort((a, b) => {
+  return [...filtered].sort((a, b) => {
     const valA = a[sortKey.value]
     const valB = b[sortKey.value]
-    return ascending.value ? valA.localeCompare(valB) : valB.localeCompare(valA)
+    return ascending.value ? valA - valB : valB - valA
   })
 })
 
-const toggleSelect = (session: any) => {
-  selected.value = selected.value?.id === session.id ? null : session
+const toggleSelect = async (session: SessionSummary) => {
+  if (selected.value?.id === session.id) {
+    selected.value = null
+  } else {
+    try {
+      const res = await sessionsApi.getSession(session.id)
+      selected.value = res.data
+    } catch (err) {
+      console.error('Failed to load session details:', err)
+    }
+  }
 }
 
 const loadSession = () => {
   if (selected.value) router.push(`/session/${selected.value.id}`)
 }
 
-const formatDate = (d: string) => new Date(d).toLocaleString()
+const formatDate = (timestamp: number) => new Date(timestamp).toLocaleString()
 </script>

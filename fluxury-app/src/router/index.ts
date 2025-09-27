@@ -1,31 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import DefaultLayout from "@/layouts/DefaultLayout.vue";
+import SessionBrowserView from "@/views/SessionBrowserView.vue";
+import SessionEditorView from "@/views/SessionEditorView.vue";
+import BeatBrowserView from "@/views/BeatBrowserView.vue";
 
 const routes = [
     {
         path: '/',
-        name: 'Home',
-        component: () => import('../views/HomeView.vue')
-    },
-    {
-        path: '/beats',
-        name: 'Beats',
-        component: () => import('../views/BeatBrowserView.vue')
-    },
-    {
-        path: '/sessions',
-        name: 'Sessions',
-        component: () => import('../views/SessionBrowserView.vue')
-    },
-    {
-        path: '/session/:id',
-        name: 'SessionEditor',
-        component: () => import('../views/SessionEditorView.vue')
+        component: DefaultLayout,
+        children: [
+            { path: 'sessions', component: SessionBrowserView },
+            { path: 'session/:id', component: SessionEditorView },
+            { path: 'beats', component: BeatBrowserView }
+        ]
     }
 ]
 
-const router = createRouter({
+export default createRouter({
     history: createWebHistory(),
+    // @ts-ignore
     routes
 })
-
-export default router

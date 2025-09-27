@@ -8,7 +8,10 @@
     "serve": "vue-cli-service serve",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:api": "npx @openapitools/openapi-generator-cli generate -i ../fluxury-model/build/smithy/openapi-beats/openapi/FluxuryBeatService.openapi.json -g typescript-axios -o ./src/api/open-api/beat-client --additional-properties=apiNameSuffix=BeatsApi && npx @openapitools/openapi-generator-cli generate -i ../fluxury-model/build/smithy/openapi-sessions/openapi/FluxurySessionService.openapi.json -g typescript-axios -o ./src/api/open-api/session-client --additional-properties=apiNameSuffix=SessionsApi",
+    "postinstall": "npm run generate:api",
+    "clean": "del-cli --force node_modules dist /src/api"
   },
   "dependencies": {
     "@aws-amplify/ui-vue": "^4.3.1",
@@ -43,6 +46,7 @@
     "@vue/cli-plugin-typescript": "~5.0.0",
     "@vue/eslint-config-typescript": "^9.1.0",
     "autoprefixer": "^10.4.21",
+    "del-cli": "^6.0.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.4.5",

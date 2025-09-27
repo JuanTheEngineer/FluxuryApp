@@ -1,0 +1,97 @@
+# ---- OS  Editor ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# JetBrains  IntelliJ
+.idea
+.iml
+
+# VSCode
+.vscode
+.history
+
+# ---- Node  JS  TS (monorepo-wide) ----
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+.tsbuildinfo
+coverage
+.nyc_output
+.vite
+.parcel-cache
+.eslintcache
+
+# Env files (keep secrets out of git)
+.env
+.env.
+!.env.example
+
+# Common build outputs
+dist
+build
+out
+
+# ---- Vue app (fluxury-app) ----
+fluxury-appnode_modules
+fluxury-appdist
+fluxury-app.vite
+fluxury-app.nuxt         # (in case you try Nuxt)
+fluxury-app.cache
+fluxury-appcoverage
+# keep configs tracked
+!fluxury-apppackage.json
+!fluxury-apppackage-lock.json
+!fluxury-appvite.config. 
+!fluxury-apptsconfig.json
+!fluxury-appopenapitools.json
+
+# ---- Backend server (fluxury-server) ----
+fluxury-servernode_modules
+fluxury-serverdist
+fluxury-serverbuild
+fluxury-servercoverage
+# ignore large local media
+fluxury-serverbeats.wav
+fluxury-serverbeats.mp3
+fluxury-serverbeats.flac
+
+# ---- AWS CDK (fluxury-infra) ----
+fluxury-infranode_modules
+fluxury-infracdk.out
+fluxury-infra.jsii
+fluxury-infracoverage
+
+# ---- Java  Gradle (fluxury-model, smithy, etc.) ----
+.class
+.gradle
+build
+out
+# Keep the Gradle wrapper tracked
+gradle
+gradle
+!gradlewrappergradle-wrapper.jar
+!gradlewrappergradle-wrapper.properties
+!gradlew
+!gradlew.bat
+
+# ---- Smithy  Generated artifacts ----
+# If you generate OpenAPIclients, ignore the generated dirs if reproducible
+# fluxury-appsrcapigenerated
+# Otherwise, keep specific generated files that you want in source control
+# !fluxury-appsrcapiapi-clients.ts
+
+# ---- Logs & temp ----
+.log
+logs
+tmp
+temp
+.tmp
+.swp
+.swo
+
+# ---- Misc ----
+# macOS zip metadata, Windows OneDrive leftovers
+.orig

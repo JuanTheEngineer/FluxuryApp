@@ -1,10 +1,10 @@
 <template>
   <div
-      v-if="selectedBeat"
+      v-if="beatUrl"
       class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg flex flex-col gap-2 transition-all"
   >
     <div class="flex justify-between items-center">
-      <strong>{{ selectedBeat.name }}</strong>
+      <strong>{{ filename }}</strong>
       <span>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
     </div>
     <input
@@ -35,12 +35,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onBeforeUnmount, watch } from 'vue'
-import { useBeatStore } from '../stores/beatStore'
-import { storeToRefs } from 'pinia'
 import { Howl } from 'howler'
+import { ref, watch, computed, onBeforeUnmount } from 'vue'
 
-const { selectedBeat } = storeToRefs(useBeatStore())
+const props = defineProps<{
+  beatUrl?: string
+}>()
 
 const sound = ref<Howl | null>(null)
 const isPlaying = ref(false)
@@ -48,6 +48,8 @@ const isLooping = ref(true)
 const currentTime = ref(0)
 const duration = ref(0)
 const updateInterval = ref<number | null>(null)
+
+const filename = computed(() => props.beatUrl?.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'Unknown')
 
 const formatTime = (s: number) => {
   const min = Math.floor(s / 60)
@@ -62,8 +64,8 @@ const clearIntervalIfNeeded = () => {
   }
 }
 
-watch(selectedBeat, (beat) => {
-  if (!beat) return
+watch(() => props.beatUrl, (url) => {
+  if (!url) return
 
   if (sound.value) {
     sound.value.stop()
@@ -72,7 +74,7 @@ watch(selectedBeat, (beat) => {
   }
 
   sound.value = new Howl({
-    src: [`http://localhost:3001${beat.path}`],
+    src: [url],
     format: ['wav'],
     html5: true,
     loop: isLooping.value,
@@ -99,7 +101,6 @@ const togglePlay = () => {
 
 const seekAudio = () => {
   if (!sound.value) return
-
   let newTime = currentTime.value
 
   if (!isLooping.value && (newTime < 0 || newTime > duration.value)) {

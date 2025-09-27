@@ -55,6 +55,7 @@ http://localhost:5173
 - AWS S3
 - AWS API Gateway
 - AWS CDK (Infrastructure as Code)
+- AWS Cognito UserPool
 
 ---
 

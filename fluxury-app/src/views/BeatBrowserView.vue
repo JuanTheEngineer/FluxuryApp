@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { getBeats, downloadBeat } from '../services/api'
-import { useBeatStore } from '../stores/beatStore'
+import { beatsApi } from '@/api/api-clients'
+import { useBeatStore } from '@/stores/beatStore'
 import { storeToRefs } from 'pinia'
-import BeatPlayer from '../components/BeatPlayer.vue'
+import BeatPlayer from '@/components/BeatPlayer.vue'
+import type { CreateBeatRequestContent } from '@/api/open-api/beat-client'
 
 const store = useBeatStore()
 const { beats, selectedBeat } = storeToRefs(store)
@@ -12,26 +13,42 @@ const url = ref('')
 const customName = ref('')
 const showForm = ref(false)
 const search = ref('')
+const isSubmitting = ref(false)
 
 const filtered = computed(() =>
-    beats.value.filter((b) => b.name.toLowerCase().includes(search.value.toLowerCase()))
+    beats.value.filter((b) =>
+        b.name.toLowerCase().includes(search.value.toLowerCase())
+    )
 )
 
 const submitUrl = async () => {
-  const res = await downloadBeat(url.value, customName.value)
-  store.addBeat({ name: customName.value || url.value, path: res.data.path })
-  url.value = ''
-  customName.value = ''
-  showForm.value = false
+  isSubmitting.value = true
+  try {
+    const payload: CreateBeatRequestContent = {
+      url: url.value,
+      name: customName.value || url.value,
+      creator: 'Unknown', // or allow the user to input this
+    }
+    const res = await beatsApi.createBeat(payload)
+    await store.fetchBeats()
+    url.value = ''
+    customName.value = ''
+    showForm.value = false
+  } catch (err) {
+    console.error('Failed to add beat:', err)
+    alert('Error adding beat')
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+const select = (beat: any) => {
+  store.selectBeat(selectedBeat.value?.path === beat.path ? null : beat)
 }
 
 onMounted(() => {
   store.fetchBeats()
 })
-
-const select = (beat: any) => {
-  store.selectBeat(selectedBeat.value?.path === beat.path ? null : beat)
-}
 </script>
 
 <template>
@@ -48,7 +65,9 @@ const select = (beat: any) => {
     <form v-if="showForm" @submit.prevent="submitUrl" class="mb-4 bg-white p-4 rounded shadow">
       <input v-model="url" placeholder="YouTube URL" class="border p-2 w-full mb-2" required />
       <input v-model="customName" placeholder="Optional Name" class="border p-2 w-full mb-2" />
-      <button class="bg-green-500 text-white px-3 py-2 rounded">Add Beat</button>
+      <button :disabled="isSubmitting" class="bg-green-500 text-white px-3 py-2 rounded">
+        {{ isSubmitting ? 'Adding...' : 'Add Beat' }}
+      </button>
     </form>
 
     <input v-model="search" placeholder="Search beats..." class="border p-2 w-full mb-4" />
@@ -65,6 +84,6 @@ const select = (beat: any) => {
       </div>
     </div>
 
-    <BeatPlayer />
+    <BeatPlayer :beatUrl="selectedBeat?.beatUrl" />
   </div>
 </template>
