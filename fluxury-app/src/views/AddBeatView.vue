@@ -33,8 +33,10 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { beatsApi } from '@/api/api-clients'
-import type { CreateBeatRequestContent } from '@/api/open-api/beat-client'
+import { useBeatStore } from '@/stores/beatStore'
+import type { CreateBeatRequestContent } from '@/services/api'
+
+const beatStore = useBeatStore()
 
 const url = ref('')
 const name = ref('')
@@ -49,11 +51,15 @@ const submitBeat = async () => {
       name: name.value,
       creator: creator.value,
     }
-    await beatsApi.createBeat(payload)
-    alert('Beat successfully added!')
-    url.value = ''
-    name.value = ''
-    creator.value = ''
+    const result = await beatStore.createBeat(payload)
+    if (result) {
+      alert('Beat successfully added!')
+      url.value = ''
+      name.value = ''
+      creator.value = ''
+    } else {
+      alert('Failed to add beat.')
+    }
   } catch (err) {
     console.error(err)
     alert('Failed to add beat.')

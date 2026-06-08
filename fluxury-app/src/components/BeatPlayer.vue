@@ -1,34 +1,66 @@
 <template>
   <div
       v-if="beatUrl"
-      class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg flex flex-col gap-2 transition-all"
+      class="fixed bottom-0 left-0 right-0 bg-surface-elevated border-t border-slate-700 p-4 shadow-2xl flex flex-col gap-2 transition-all z-40"
   >
-    <div class="flex justify-between items-center">
-      <strong>{{ filename }}</strong>
-      <span>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
+    <!-- Loading and Error States -->
+    <div v-if="isLoading" class="text-center text-amber-500">
+      Loading audio...
     </div>
-    <input
-        type="range"
-        min="0"
-        :max="duration"
-        step="0.1"
-        v-model.number="currentTime"
-        @input="seekAudio"
-    />
-    <div class="flex gap-2">
-      <button @click="skip(-5)">⏪ 5s</button>
-      <button @click="togglePlay">
-        {{ isPlaying ? '⏸ Pause' : '▶️ Play' }}
-      </button>
-      <button @click="skip(5)">5s ⏩</button>
-      <button @click="toggleLoop">
-        {{ isLooping ? '🔁 Looping' : '⏭ Once' }}
-      </button>
+    <div v-if="loadError" class="text-center text-red-400 text-sm">
+      {{ loadError }}
+    </div>
+
+    <!-- Main Player UI -->
+    <div v-if="!isLoading && !loadError">
+      <div class="flex justify-between items-center">
+        <span class="text-sm font-medium text-slate-100">{{ filename }}</span>
+        <span class="text-xs text-slate-400">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
+      </div>
+
+      <!-- Progress Bar -->
+      <input
+          type="range"
+          min="0"
+          :max="duration || 100"
+          step="0.1"
+          v-model.number="currentTime"
+          @input="seekAudio"
+          :disabled="duration === 0"
+          class="w-full"
+      />
+
+      <!-- Controls -->
+      <div class="flex gap-2 items-center flex-wrap">
+        <button @click="skip(-5)" :disabled="!sound" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">-5s</button>
+        <button @click="togglePlay" :disabled="!sound || duration === 0" class="px-4 py-1.5 bg-amber-500 text-black rounded-lg text-sm font-medium hover:bg-amber-400 disabled:opacity-40 transition-colors">
+          {{ isPlaying ? 'Pause' : 'Play' }}
+        </button>
+        <button @click="skip(5)" :disabled="!sound" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">+5s</button>
+        <button @click="toggleLoop" :disabled="!sound" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          {{ isLooping ? 'Loop ∞' : 'Loop Off' }}
+        </button>
+
+        <!-- Volume Control -->
+        <div class="flex items-center gap-2 ml-4">
+          <span class="text-sm">Vol</span>
+          <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              v-model.number="volume"
+              @input="updateVolume"
+              class="w-20"
+          />
+          <span class="text-xs text-slate-400">{{ Math.round(volume * 100) }}%</span>
+        </div>
+      </div>
     </div>
   </div>
   <div
       v-else
-      class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow text-center text-gray-400"
+      class="fixed bottom-0 left-0 right-0 bg-surface-elevated border-t border-slate-700 p-4 text-center text-slate-500 z-40"
   >
     No Song Selected
   </div>
@@ -48,6 +80,9 @@ const isLooping = ref(true)
 const currentTime = ref(0)
 const duration = ref(0)
 const updateInterval = ref<number | null>(null)
+const isLoading = ref(false)
+const loadError = ref<string | null>(null)
+const volume = ref(0.8)
 
 const filename = computed(() => props.beatUrl?.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'Unknown')
 
@@ -65,34 +100,82 @@ const clearIntervalIfNeeded = () => {
 }
 
 watch(() => props.beatUrl, (url) => {
-  if (!url) return
+  if (!url) {
+    // Clear everything when no URL is provided
+    if (sound.value) {
+      sound.value.stop()
+      sound.value.unload()
+      clearIntervalIfNeeded()
+    }
+    sound.value = null
+    isPlaying.value = false
+    currentTime.value = 0
+    duration.value = 0
+    loadError.value = null
+    return
+  }
 
+  // Clean up previous sound
   if (sound.value) {
     sound.value.stop()
     sound.value.unload()
     clearIntervalIfNeeded()
   }
 
+  isLoading.value = true
+  loadError.value = null
+
+  // Detect audio format from URL
+  const audioFormats = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac']
+  const urlFormat = url.split('.').pop()?.toLowerCase()
+  const format = audioFormats.includes(urlFormat || '') ? [urlFormat!] : ['mp3', 'wav'] // Default fallback
+
   sound.value = new Howl({
     src: [url],
-    format: ['wav'],
+    format: format,
     html5: true,
     loop: isLooping.value,
+    volume: volume.value,
+    preload: true,
     onload: () => {
+      isLoading.value = false
       duration.value = sound.value?.duration() || 0
+      console.log('Audio loaded successfully:', url)
+    },
+    onloaderror: (id, error) => {
+      isLoading.value = false
+      loadError.value = 'Failed to load audio file'
+      console.error('Audio load error:', error, url)
     },
     onplay: () => {
       isPlaying.value = true
+      clearIntervalIfNeeded() // Clear any existing interval
       updateInterval.value = setInterval(() => {
-        if (sound.value) currentTime.value = sound.value.seek() as number
-      }, 500)
+        if (sound.value && sound.value.playing()) {
+          currentTime.value = sound.value.seek() as number
+        }
+      }, 100) // More frequent updates for smoother progress
     },
-    onpause: () => (isPlaying.value = false),
-    onend: () => (isPlaying.value = false),
+    onpause: () => {
+      isPlaying.value = false
+      clearIntervalIfNeeded()
+    },
+    onend: () => {
+      isPlaying.value = false
+      clearIntervalIfNeeded()
+      if (!isLooping.value) {
+        currentTime.value = 0
+      }
+    },
+    onstop: () => {
+      isPlaying.value = false
+      clearIntervalIfNeeded()
+    }
   })
 
-  sound.value.play()
-})
+  // Don't auto-play when loading - wait for user interaction
+  // sound.value.play()
+}, { immediate: true })
 
 const togglePlay = () => {
   if (!sound.value) return
@@ -100,34 +183,68 @@ const togglePlay = () => {
 }
 
 const seekAudio = () => {
-  if (!sound.value) return
+  if (!sound.value || duration.value === 0) return
+
   let newTime = currentTime.value
 
-  if (!isLooping.value && (newTime < 0 || newTime > duration.value)) {
-    sound.value.seek(0.0)
-    currentTime.value = 0.0
-    return
+  // Clamp time to valid range
+  if (newTime < 0) {
+    newTime = 0
+  } else if (newTime > duration.value) {
+    newTime = duration.value
   }
 
+  // Handle looping edge cases
   if (isLooping.value) {
     if (newTime < 0) {
-      const overflow = Math.abs(newTime)
-      newTime = duration.value - (overflow % duration.value)
-    } else if (newTime > duration.value) {
-      const overflow = newTime - duration.value
-      newTime = overflow % duration.value
+      // Wrap to end of track
+      newTime = duration.value + newTime
+    } else if (newTime >= duration.value) {
+      // Wrap to beginning
+      newTime = newTime % duration.value
     }
+  } else {
+    // Non-looping mode - clamp to bounds
+    newTime = Math.max(0, Math.min(newTime, duration.value - 0.1))
   }
 
-  sound.value.seek(newTime)
-  currentTime.value = newTime
+  try {
+    sound.value.seek(newTime)
+    currentTime.value = newTime
+  } catch (error) {
+    console.warn('Seek operation failed:', error)
+    // Reset to safe position
+    currentTime.value = sound.value.seek() as number
+  }
 }
 
 const skip = (seconds: number) => {
-  if (!sound.value) return
-  const newTime = (sound.value.seek() as number) + seconds
+  if (!sound.value || duration.value === 0) return
+
+  const currentSeek = sound.value.seek() as number
+  let newTime = currentSeek + seconds
+
+  // Handle boundaries
+  if (isLooping.value) {
+    // Wrap around for looping
+    if (newTime < 0) {
+      newTime = duration.value + newTime
+    } else if (newTime >= duration.value) {
+      newTime = newTime % duration.value
+    }
+  } else {
+    // Clamp for non-looping
+    newTime = Math.max(0, Math.min(newTime, duration.value - 0.1))
+  }
+
   currentTime.value = newTime
   seekAudio()
+}
+
+const updateVolume = () => {
+  if (sound.value) {
+    sound.value.volume(volume.value)
+  }
 }
 
 const toggleLoop = () => {
@@ -142,9 +259,3 @@ onBeforeUnmount(() => {
   clearIntervalIfNeeded()
 })
 </script>
-
-<style scoped>
-button {
-  @apply px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600;
-}
-</style>

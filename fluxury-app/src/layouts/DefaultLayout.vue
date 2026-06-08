@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex flex-col bg-black text-white">
+  <div class="min-h-screen flex flex-col bg-surface text-slate-100 font-sans">
     <AppHeader />
     <main class="flex-1 overflow-y-auto">
       <RouterView />

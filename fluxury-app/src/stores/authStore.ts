@@ -1,33 +1,111 @@
 import { defineStore } from 'pinia'
-import * as Amplify from 'aws-amplify'
-const { Auth } = Amplify
+import { authApi } from '@/services/api'
+import type { AuthUser } from '@/services/api'
 
 export const useAuthStore = defineStore('auth', {
-    state: () => ({
-        user: null as any,
-        jwt: ''
-    }),
-    actions: {
-        async login(email: string, password: string) {
-            const user = await Auth.signIn(email, password)
-            this.user = user
-            const session = await Auth.currentSession()
-            this.jwt = session.getIdToken().getJwtToken()
-        },
-        async logout() {
-            await Auth.signOut()
-            this.user = null
-            this.jwt = ''
-        },
-        async loadSession() {
-            try {
-                const session = await Auth.currentSession()
-                this.jwt = session.getIdToken().getJwtToken()
-                this.user = await Auth.currentAuthenticatedUser()
-            } catch {
-                this.user = null
-                this.jwt = ''
-            }
+  state: () => ({
+    user: null as AuthUser | null,
+    isAuthenticated: false,
+    isLoading: false,
+    error: null as string | null,
+  }),
+
+  actions: {
+    async checkAuthStatus() {
+      this.isLoading = true
+      try {
+        const authenticated = await authApi.isAuthenticated()
+        if (authenticated) {
+          const userInfo = await authApi.getCurrentUser()
+          this.user = userInfo
+          this.isAuthenticated = true
+        } else {
+          this.user = null
+          this.isAuthenticated = false
         }
+      } catch (error) {
+        console.warn('Auth status check failed:', error)
+        this.user = null
+        this.isAuthenticated = false
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async login(username: string, password: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const result = await authApi.login(username, password)
+        if (result.success) {
+          await this.checkAuthStatus()
+          return { success: true }
+        }
+        return { success: false, error: 'Login failed' }
+      } catch (error: any) {
+        this.error = error.message || 'Login failed'
+        console.error('Login error:', error)
+        return { success: false, error: this.error }
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async register(username: string, email: string, password: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        // Registration delegates to authApi.login in demo mode.
+        // Real Cognito signUp flow is punted to a post-stabilization spec
+        // that will add a `register` method to the AuthApiContract.
+        const result = await authApi.login(username, password)
+        if (result.success) {
+          await this.checkAuthStatus()
+          return { success: true }
+        }
+        return { success: false, error: 'Registration failed' }
+      } catch (error: any) {
+        this.error = error.message || 'Registration failed'
+        console.error('Registration error:', error)
+        return { success: false, error: this.error }
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async confirmRegistration(_username: string, _confirmationCode: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        // Real Cognito confirmSignUp is punted to a post-stabilization spec
+        // that will add a `confirmRegistration` method to the AuthApiContract.
+        return { success: true }
+      } catch (error: any) {
+        this.error = error.message || 'Confirmation failed'
+        console.error('Confirmation error:', error)
+        return { success: false, error: this.error }
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async logout() {
+      this.isLoading = true
+      try {
+        await authApi.logout()
+        this.user = null
+        this.isAuthenticated = false
+        this.error = null
+      } catch (error: any) {
+        console.error('Logout error:', error)
+        this.error = error.message || 'Logout failed'
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    clearError() {
+      this.error = null
     }
+  },
 })

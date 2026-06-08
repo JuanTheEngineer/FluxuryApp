@@ -1,27 +1,26 @@
 <template>
-  <header class="bg-white shadow-md px-6 py-4 flex justify-between items-center">
-    <router-link to="/" class="text-xl font-bold text-indigo-700">Fluxury</router-link>
+  <header class="sticky top-0 z-50 bg-surface-elevated border-b border-slate-700 px-4 py-3 flex justify-between items-center">
+    <router-link to="/sessions" class="text-lg font-bold text-amber-500">Fluxury</router-link>
 
-    <nav class="space-x-4">
-      <router-link to="/beats" class="text-gray-700 hover:underline">Beats</router-link>
-      <router-link to="/sessions" class="text-gray-700 hover:underline">Sessions</router-link>
+    <nav class="flex gap-4">
+      <router-link to="/beats" class="text-slate-400 hover:text-slate-100 text-sm transition-colors"
+        active-class="text-slate-100 font-medium">Beats</router-link>
+      <router-link to="/sessions" class="text-slate-400 hover:text-slate-100 text-sm transition-colors"
+        active-class="text-slate-100 font-medium">Sessions</router-link>
     </nav>
 
-    <div>
-      <span v-if="auth.user" class="mr-3 text-sm text-gray-500">
-        Hello, {{ auth.user.attributes?.email || auth.user.username }}
-      </span>
+    <div class="flex items-center gap-2">
       <button
           v-if="auth.user"
           @click="auth.logout"
-          class="text-sm bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+          class="text-xs text-slate-400 hover:text-slate-100 transition-colors"
       >
         Logout
       </button>
       <router-link
           v-else
           to="/login"
-          class="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+          class="text-xs bg-amber-500 text-black px-3 py-1 rounded hover:bg-amber-400"
       >
         Login
       </router-link>
