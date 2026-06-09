@@ -6,6 +6,8 @@ import {
   LambdaIntegration,
   AuthorizationType,
   CognitoUserPoolsAuthorizer,
+  Cors,
+  MethodOptions,
 } from 'aws-cdk-lib/aws-apigateway'
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
 import { Runtime } from 'aws-cdk-lib/aws-lambda'
@@ -45,9 +47,28 @@ export class SessionStack extends Stack {
       autoDeleteObjects: true,
     })
 
-    // REST API
+    // REST API with CORS configuration
     const api = new RestApi(this, 'FluxuryAPI', {
       restApiName: 'Fluxury Session API',
+      description: 'API for Fluxury rap session management',
+      defaultCorsPreflightOptions: {
+        allowOrigins: [
+          'http://localhost:5173', // Development
+          'http://localhost:3000', // Alternative dev port
+          'https://*.amplifyapp.com', // Amplify hosting
+          'https://fluxury.com', // Production domain (update as needed)
+        ],
+        allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+          'X-Amz-User-Agent',
+        ],
+        allowCredentials: true,
+      },
     })
 
     const lambdaNames = [
@@ -77,11 +98,19 @@ export class SessionStack extends Stack {
       table.grantReadWriteData(fn)
       bucket.grantReadWrite(fn)
 
-      // Use the existing /sessions path, and make each one a sub-resource
-      const methodResource = sessionsResource.addResource(name)
-      methodResource.addMethod('POST', new LambdaIntegration(fn), {
+      // Configure method options with proper CORS and auth
+      const methodOptions: MethodOptions = {
         authorizer,
         authorizationType: AuthorizationType.COGNITO,
+      }
+
+      // Use the existing /sessions path, and make each one a sub-resource
+      const methodResource = sessionsResource.addResource(name)
+      methodResource.addMethod('POST', new LambdaIntegration(fn), methodOptions)
+
+      // Add OPTIONS method for CORS preflight
+      methodResource.addMethod('OPTIONS', new LambdaIntegration(fn), {
+        authorizationType: AuthorizationType.NONE, // OPTIONS requests don't need auth
       })
     }
   }

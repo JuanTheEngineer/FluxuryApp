@@ -6,6 +6,9 @@
 // in-memory `MockStorage` and refreshes the active stores. This gives every
 // test a fresh, deterministic baseline (Req 7.5).
 
+// Patch global IndexedDB for all tests (fake-indexeddb)
+import 'fake-indexeddb/auto'
+
 import { beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createTestingPinia } from '@pinia/testing'

@@ -72,17 +72,28 @@ import { ref, watch, computed, onBeforeUnmount } from 'vue'
 
 const props = defineProps<{
   beatUrl?: string
+  initialPosition?: number    // seconds — seek to this on load, stay paused
+  initialVolume?: number      // 0–1, overrides default 0.8
+  initialLoop?: boolean       // overrides default true
+}>()
+
+const emit = defineEmits<{
+  'beat-audible': []
+  'update:playbackState': [state: { position: number; volume: number; looping: boolean }]
 }>()
 
 const sound = ref<Howl | null>(null)
 const isPlaying = ref(false)
-const isLooping = ref(true)
+const isLooping = ref(props.initialLoop ?? true)
 const currentTime = ref(0)
 const duration = ref(0)
 const updateInterval = ref<number | null>(null)
 const isLoading = ref(false)
 const loadError = ref<string | null>(null)
-const volume = ref(0.8)
+const volume = ref(props.initialVolume ?? 0.8)
+
+let beatAudibleEmitted = false
+let isUserAction = true
 
 const filename = computed(() => props.beatUrl?.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'Unknown')
 
@@ -99,7 +110,18 @@ const clearIntervalIfNeeded = () => {
   }
 }
 
+function emitPlaybackState() {
+  if (!isUserAction || !sound.value) return
+  emit('update:playbackState', {
+    position: sound.value.seek() as number,
+    volume: volume.value,
+    looping: isLooping.value,
+  })
+}
+
 watch(() => props.beatUrl, (url) => {
+  beatAudibleEmitted = false
+
   if (!url) {
     // Clear everything when no URL is provided
     if (sound.value) {
@@ -125,6 +147,10 @@ watch(() => props.beatUrl, (url) => {
   isLoading.value = true
   loadError.value = null
 
+  // Apply initial props for the new sound
+  volume.value = props.initialVolume ?? 0.8
+  isLooping.value = props.initialLoop ?? true
+
   // Detect audio format from URL
   const audioFormats = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac']
   const urlFormat = url.split('.').pop()?.toLowerCase()
@@ -134,13 +160,21 @@ watch(() => props.beatUrl, (url) => {
     src: [url],
     format: format,
     html5: true,
-    loop: isLooping.value,
-    volume: volume.value,
+    loop: props.initialLoop ?? true,
+    volume: props.initialVolume ?? 0.8,
     preload: true,
     onload: () => {
       isLoading.value = false
       duration.value = sound.value?.duration() || 0
       console.log('Audio loaded successfully:', url)
+
+      // Seek to initial position if provided, stay paused
+      if (props.initialPosition != null && props.initialPosition > 0 && sound.value) {
+        isUserAction = false
+        sound.value.seek(props.initialPosition)
+        currentTime.value = props.initialPosition
+        isUserAction = true
+      }
     },
     onloaderror: (id, error) => {
       isLoading.value = false
@@ -148,6 +182,12 @@ watch(() => props.beatUrl, (url) => {
       console.error('Audio load error:', error, url)
     },
     onplay: () => {
+      // Emit beat-audible on first play per session load
+      if (!beatAudibleEmitted) {
+        beatAudibleEmitted = true
+        emit('beat-audible')
+      }
+
       isPlaying.value = true
       clearIntervalIfNeeded() // Clear any existing interval
       updateInterval.value = setInterval(() => {
@@ -180,6 +220,7 @@ watch(() => props.beatUrl, (url) => {
 const togglePlay = () => {
   if (!sound.value) return
   sound.value.playing() ? sound.value.pause() : sound.value.play()
+  emitPlaybackState()
 }
 
 const seekAudio = () => {
@@ -216,6 +257,7 @@ const seekAudio = () => {
     // Reset to safe position
     currentTime.value = sound.value.seek() as number
   }
+  emitPlaybackState()
 }
 
 const skip = (seconds: number) => {
@@ -239,12 +281,14 @@ const skip = (seconds: number) => {
 
   currentTime.value = newTime
   seekAudio()
+  emitPlaybackState()
 }
 
 const updateVolume = () => {
   if (sound.value) {
     sound.value.volume(volume.value)
   }
+  emitPlaybackState()
 }
 
 const toggleLoop = () => {
@@ -252,6 +296,7 @@ const toggleLoop = () => {
   const newLoop = !sound.value.loop()
   sound.value.loop(newLoop)
   isLooping.value = newLoop
+  emitPlaybackState()
 }
 
 onBeforeUnmount(() => {

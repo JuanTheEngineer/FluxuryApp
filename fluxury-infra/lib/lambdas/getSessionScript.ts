@@ -1,22 +1,40 @@
-import { S3 } from 'aws-sdk'
-import { withAuth } from '../utils/authMiddleware'
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 
-const s3 = new S3()
+const s3Client = new S3Client({ region: process.env.AWS_REGION })
 const BUCKET_NAME = process.env.BUCKET_NAME!
 
-export const handler = withAuth(async (event: any) => {
-  const id = event.pathParameters.id
+export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  try {
+    const id = event.pathParameters?.id
 
-  const obj = await s3
-    .getObject({
+    if (!id) {
+      return {
+        statusCode: 400,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Session ID required' }),
+      }
+    }
+
+    const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: `sessions/${id}/script.json`,
     })
-    .promise()
 
-  return {
-    statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: obj.Body?.toString('utf-8'),
+    const response = await s3Client.send(command)
+    const body = await response.Body?.transformToString() || '{}'
+
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: body,
+    }
+  } catch (error) {
+    console.error('Error getting session script:', error)
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Failed to get session script' }),
+    }
   }
-})
+}
