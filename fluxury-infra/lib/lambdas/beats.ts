@@ -1,9 +1,13 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { v4 as uuid } from 'uuid'
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION })
+const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION }))
+const TABLE_NAME = process.env.TABLE_NAME!
 const BUCKET_NAME = process.env.BUCKET_NAME!
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
@@ -34,17 +38,15 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   }
 
   try {
-    const { httpMethod, queryStringParameters } = event
+    const { httpMethod } = event
     const userId = getUserFromEvent(event)
 
     switch (httpMethod) {
       case 'GET':
-        // List available beats or get beat details
-        return await listBeats(queryStringParameters)
+        return await listBeats()
 
       case 'POST':
-        // Upload new beat (generate signed URL)
-        return await createBeatUploadUrl(event.body, userId)
+        return await createBeat(event.body, userId)
 
       default:
         return createResponse(405, { error: 'Method not allowed' })
@@ -55,98 +57,100 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   }
 }
 
-async function listBeats(queryParams: any): Promise<APIGatewayProxyResult> {
+async function listBeats(): Promise<APIGatewayProxyResult> {
   try {
-    // For beta, return a mix of public beats and user uploads
-    const publicBeats = [
-      {
-        id: 'beat-1',
-        name: 'Chill Lo-Fi Beat',
-        artist: 'FluxuryBeats',
-        duration: 180,
-        bpm: 85,
-        key: 'C minor',
-        genre: 'Lo-Fi',
-        url: 'https://www.soundjay.com/misc/sounds/bell-ringing-05.wav', // Placeholder
-        artworkUrl: 'https://picsum.photos/400/400?random=1',
-        isPublic: true,
-        tags: ['chill', 'lofi', 'study'],
+    const command = new ScanCommand({
+      TableName: TABLE_NAME,
+      FilterExpression: '#type = :beatType',
+      ExpressionAttributeNames: {
+        '#type': 'type',
       },
-      {
-        id: 'beat-2',
-        name: 'Trap Banger',
-        artist: 'FluxuryBeats',
-        duration: 150,
-        bpm: 140,
-        key: 'G minor',
-        genre: 'Trap',
-        url: 'https://www.soundjay.com/misc/sounds/bell-ringing-05.wav', // Placeholder
-        artworkUrl: 'https://picsum.photos/400/400?random=2',
-        isPublic: true,
-        tags: ['trap', 'hard', 'energetic'],
+      ExpressionAttributeValues: {
+        ':beatType': 'beat',
       },
-      {
-        id: 'beat-3',
-        name: 'Boom Bap Classic',
-        artist: 'FluxuryBeats',
-        duration: 200,
-        bpm: 90,
-        key: 'A minor',
-        genre: 'Boom Bap',
-        url: 'https://www.soundjay.com/misc/sounds/bell-ringing-05.wav', // Placeholder
-        artworkUrl: 'https://picsum.photos/400/400?random=3',
-        isPublic: true,
-        tags: ['boombap', 'classic', 'vinyl'],
-      },
-    ]
-
-    // In production, you'd also fetch user-uploaded beats from S3
-    // For now, just return the public beats
-    return createResponse(200, {
-      beats: publicBeats,
-      total: publicBeats.length,
     })
+
+    const result = await ddbClient.send(command)
+    const items = result.Items || []
+
+    // Generate presigned URLs for each beat's audio file
+    const beats = await Promise.all(
+      items.map(async (item) => {
+        const presignedUrl = await getSignedUrl(
+          s3Client as any,
+          new GetObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: item.s3Key,
+          }),
+          { expiresIn: 3600 } // 1 hour
+        )
+
+        return {
+          id: item.id,
+          name: item.name,
+          path: presignedUrl,
+          s3Key: item.s3Key,
+          bpm: item.bpm || null,
+          genre: item.genre || null,
+          created: item.created,
+        }
+      })
+    )
+
+    return createResponse(200, { beats })
   } catch (error) {
     console.error('Error listing beats:', error)
     return createResponse(500, { error: 'Failed to list beats' })
   }
 }
 
-async function createBeatUploadUrl(bodyString: string | null, userId: string): Promise<APIGatewayProxyResult> {
+async function createBeat(bodyString: string | null, userId: string): Promise<APIGatewayProxyResult> {
   try {
     const body = bodyString ? JSON.parse(bodyString) : {}
-    const { fileName, fileType } = body
 
-    if (!fileName || !fileType) {
-      return createResponse(400, { error: 'fileName and fileType are required' })
+    if (!body.name || !body.fileName) {
+      return createResponse(400, { error: 'name and fileName are required' })
     }
 
-    // Generate unique file key
-    const fileExtension = fileName.split('.').pop()
-    const uniqueFileName = `${uuid()}.${fileExtension}`
-    const fileKey = `beats/${userId}/${uniqueFileName}`
+    const beatId = body.id || `beat-${uuid()}`
+    const s3Key = `beats/${beatId}/audio.wav`
+    const now = new Date().toISOString()
 
-    // Generate signed URL for upload
-    const command = new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: fileKey,
-      ContentType: fileType,
-      Metadata: {
-        userId: userId,
-        originalName: fileName,
-        uploadedAt: new Date().toISOString(),
-      },
+    const beat = {
+      id: beatId,
+      userId: userId,
+      type: 'beat',
+      name: body.name,
+      fileName: body.fileName,
+      s3Key,
+      bpm: body.bpm || null,
+      genre: body.genre || null,
+      created: now,
+    }
+
+    const putCommand = new PutCommand({
+      TableName: TABLE_NAME,
+      Item: beat,
     })
 
-    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 }) // 5 minutes
+    await ddbClient.send(putCommand)
 
-    return createResponse(200, {
-      uploadUrl: signedUrl,
-      fileKey: fileKey,
-      expiresIn: 300,
+    // Generate presigned URL for the audio file
+    const presignedUrl = await getSignedUrl(
+      s3Client as any,
+      new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+      }),
+      { expiresIn: 3600 }
+    )
+
+    return createResponse(201, {
+      ...beat,
+      path: presignedUrl,
     })
   } catch (error) {
-    console.error('Error creating upload URL:', error)
-    return createResponse(500, { error: 'Failed to create upload URL' })
+    console.error('Error creating beat:', error)
+    return createResponse(500, { error: 'Failed to create beat' })
   }
 }

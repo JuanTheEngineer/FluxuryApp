@@ -31,6 +31,13 @@ if ! command -v aws &> /dev/null; then
     exit 1
 fi
 
+# Check jq
+if ! command -v jq &> /dev/null; then
+    echo -e "${RED}❌ jq is not installed${NC}"
+    echo "Install with: brew install jq"
+    exit 1
+fi
+
 # Check AWS credentials
 if ! aws sts get-caller-identity &> /dev/null; then
     echo -e "${RED}❌ AWS credentials not configured${NC}"
@@ -124,13 +131,20 @@ if [ $? -eq 0 ]; then
         CLIENT_ID=$(cat cdk-outputs-beta.json | jq -r '.FluxuryBeta.UserPoolClientId // empty' 2>/dev/null)
         BUCKET_NAME=$(cat cdk-outputs-beta.json | jq -r '.FluxuryBeta.S3BucketName // empty' 2>/dev/null)
         FRONTEND_URL=$(cat cdk-outputs-beta.json | jq -r '.FluxuryBeta.FrontendURL // empty' 2>/dev/null)
+        IDENTITY_POOL_ID=$(cat cdk-outputs-beta.json | jq -r '.FluxuryBeta.IdentityPoolId // empty' 2>/dev/null)
+        CLOUDFRONT_URL=$(cat cdk-outputs-beta.json | jq -r '.FluxuryBeta.CloudFrontURL // empty' 2>/dev/null)
+        FRONTEND_BUCKET=$(cat cdk-outputs-beta.json | jq -r '.FluxuryBeta.FrontendBucketName // empty' 2>/dev/null)
+        CF_DIST_ID=$(cat cdk-outputs-beta.json | jq -r '.FluxuryBeta.CloudFrontDistributionId // empty' 2>/dev/null)
 
         echo -e "${BLUE}📋 Beta Environment Ready!${NC}"
         echo "================================================"
-        echo "🌐 Frontend URL: ${FRONTEND_URL}"
+        echo "🌐 Frontend URL: ${CLOUDFRONT_URL:-${FRONTEND_URL}}"
         echo "🔗 API URL: ${API_URL}"
         echo "🪣 S3 Bucket: ${BUCKET_NAME}"
+        echo "🪣 Frontend Bucket: ${FRONTEND_BUCKET}"
         echo "👤 User Pool: ${USER_POOL_ID}"
+        echo "🆔 Identity Pool: ${IDENTITY_POOL_ID}"
+        echo "☁️ CloudFront Distribution: ${CF_DIST_ID}"
         echo ""
 
         # Create environment file for frontend
@@ -148,6 +162,7 @@ VITE_BEATS_API_BASE_URL=${API_URL}
 VITE_AWS_REGION=${REGION}
 VITE_COGNITO_USER_POOL_ID=${USER_POOL_ID}
 VITE_COGNITO_USER_POOL_CLIENT_ID=${CLIENT_ID}
+VITE_COGNITO_IDENTITY_POOL_ID=${IDENTITY_POOL_ID}
 VITE_S3_BUCKET_NAME=${BUCKET_NAME}
 
 # Beta Features
@@ -158,20 +173,91 @@ VITE_MAX_SESSIONS=50
 EOF
 
         echo -e "${GREEN}✅ Environment file created: ../fluxury-app/.env.beta${NC}"
+
+        # Create Cognito user
+        echo ""
+        echo -e "${YELLOW}👤 Creating developer Cognito user...${NC}"
+
+        # Get credentials from env vars or prompt
+        DEV_EMAIL="${FLUXURY_DEV_EMAIL:-}"
+        DEV_PASSWORD="${FLUXURY_DEV_PASSWORD:-}"
+
+        if [ -z "$DEV_EMAIL" ]; then
+            read -p "Enter your email for login: " DEV_EMAIL
+        fi
+        if [ -z "$DEV_PASSWORD" ]; then
+            read -sp "Enter password (min 8 chars, 1 lowercase, 1 digit): " DEV_PASSWORD
+            echo
+        fi
+
+        # Create user (suppress welcome email)
+        echo "Creating user: $DEV_EMAIL"
+        aws cognito-idp admin-create-user \
+            --user-pool-id "$USER_POOL_ID" \
+            --username "$DEV_EMAIL" \
+            --user-attributes Name=email,Value="$DEV_EMAIL" Name=email_verified,Value=true \
+            --message-action SUPPRESS \
+            2>/dev/null || echo -e "${YELLOW}⚠️ User may already exist (continuing)${NC}"
+
+        # Set permanent password (bypass force-change-password state)
+        aws cognito-idp admin-set-user-password \
+            --user-pool-id "$USER_POOL_ID" \
+            --username "$DEV_EMAIL" \
+            --password "$DEV_PASSWORD" \
+            --permanent \
+            2>/dev/null && echo -e "${GREEN}✅ User created and password set${NC}" \
+            || echo -e "${RED}❌ Failed to set password. You may need to set it manually.${NC}"
+
+        # Frontend deployment (optional)
+        echo ""
+        read -p "🌐 Build and deploy frontend now? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}🏗️ Building frontend with beta configuration...${NC}"
+            cd ../fluxury-app
+            npm run build -- --mode beta
+
+            echo -e "${YELLOW}🚀 Uploading to S3...${NC}"
+            # Upload hashed assets with long cache
+            aws s3 sync dist/assets/ "s3://${FRONTEND_BUCKET}/assets/" \
+                --cache-control "max-age=31536000,immutable" \
+                --delete
+
+            # Upload index.html with short cache
+            aws s3 cp dist/index.html "s3://${FRONTEND_BUCKET}/index.html" \
+                --cache-control "max-age=300"
+
+            # Upload other root files
+            aws s3 sync dist/ "s3://${FRONTEND_BUCKET}/" \
+                --exclude "assets/*" \
+                --exclude "index.html" \
+                --delete
+
+            echo -e "${YELLOW}🔄 Invalidating CloudFront cache...${NC}"
+            aws cloudfront create-invalidation \
+                --distribution-id "${CF_DIST_ID}" \
+                --paths "/*" > /dev/null 2>&1
+
+            echo -e "${GREEN}✅ Frontend deployed!${NC}"
+            echo -e "Open: ${CLOUDFRONT_URL}"
+
+            cd ../fluxury-infra
+        fi
+
         echo ""
         echo -e "${YELLOW}📝 Next Steps:${NC}"
         echo "1. 🏗️ Build and deploy frontend:"
         echo "   cd ../fluxury-app"
         echo "   npm run build -- --mode beta"
         echo ""
-        echo "2. 🌐 Upload to Squarespace subdirectory:"
-        echo "   Upload dist/ contents to juantheengineer.com/fluxury"
+        echo "2. 🌐 Upload frontend to S3:"
+        echo "   aws s3 sync dist/ s3://${FRONTEND_BUCKET} --delete"
         echo ""
-        echo "3. 🔗 Configure API subdomain (optional):"
-        echo "   Point api.juantheengineer.com to: ${API_URL}"
+        echo "3. 🔄 Invalidate CloudFront cache:"
+        echo "   aws cloudfront create-invalidation --distribution-id ${CF_DIST_ID} --paths '/*'"
         echo ""
         echo "4. 🧪 Test your beta app:"
-        echo "   Open: ${FRONTEND_URL}"
+        echo "   Open: ${CLOUDFRONT_URL:-${FRONTEND_URL}}"
         echo ""
         echo "5. 🎯 Start beta testing!"
 

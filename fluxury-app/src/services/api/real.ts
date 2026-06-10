@@ -6,7 +6,6 @@
 // responsible for wiring real Cognito tokens, real DynamoDB endpoints, and
 // real S3 buckets end-to-end.
 
-import axios from 'axios'
 import type {
   SessionsApiContract,
   BeatsApiContract,
@@ -23,7 +22,7 @@ import type {
   CreateBeatRequestContent,
 } from './types'
 import {
-  createAuthInterceptor,
+  createAuthenticatedClient,
   isAuthenticated as authIsAuthenticated,
   getCurrentUser as authGetCurrentUser,
 } from '@/api/auth-interceptor'
@@ -34,40 +33,14 @@ const sessionsBasePath =
 const beatsBasePath =
   import.meta.env.VITE_BEATS_API_BASE_URL || 'http://localhost:3001'
 
-const sessionAxios = axios.create({
-  baseURL: sessionsBasePath,
-  headers: { 'Content-Type': 'application/json' },
-})
-const beatAxios = axios.create({
-  baseURL: beatsBasePath,
-  headers: { 'Content-Type': 'application/json' },
-})
+// Use the authenticated client factory which handles JWT injection and 401 refresh
+const sessionAxios = createAuthenticatedClient()
+sessionAxios.defaults.baseURL = sessionsBasePath
+sessionAxios.defaults.headers.common['Content-Type'] = 'application/json'
 
-const authInterceptor = createAuthInterceptor()
-// The interceptor is typed against AxiosRequestConfig; axios v1's request
-// interceptor signature is InternalAxiosRequestConfig. They are structurally
-// compatible at runtime, so we widen via `any` here rather than modify the
-// shared interceptor helper.
-sessionAxios.interceptors.request.use(authInterceptor as any)
-beatAxios.interceptors.request.use(authInterceptor as any)
-
-// 401 logging only; no redirect from this layer.
-sessionAxios.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    if (err.response?.status === 401)
-      console.warn('Authentication failed (sessions)')
-    return Promise.reject(err)
-  },
-)
-beatAxios.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    if (err.response?.status === 401)
-      console.warn('Authentication failed (beats)')
-    return Promise.reject(err)
-  },
-)
+const beatAxios = createAuthenticatedClient()
+beatAxios.defaults.baseURL = beatsBasePath
+beatAxios.defaults.headers.common['Content-Type'] = 'application/json'
 
 // --- Sessions API (axios-based; replaces the OpenAPI-generated stub) ---
 export const sessionsApi = {
@@ -109,14 +82,10 @@ export const beatsApi = {
 export const authApi = {
   getCurrentUser: async (): Promise<AuthUser> => {
     const u = await authGetCurrentUser()
-    if (!u) throw new Error('Not authenticated')
-    // Cognito JWT payload uses `sub`, `cognito:username`, etc.
     return {
-      username:
-        (u as any)['cognito:username'] ?? (u as any).username ?? '',
-      email: (u as any).email,
-      sub: String((u as any).sub ?? ''),
-      ...u,
+      username: u.username,
+      email: u.email,
+      sub: u.sub,
     } as AuthUser
   },
   isAuthenticated: () => authIsAuthenticated(),

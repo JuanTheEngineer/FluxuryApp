@@ -13,8 +13,11 @@ import {
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
 import { Runtime } from 'aws-cdk-lib/aws-lambda'
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb'
-import { Bucket, BucketAccessControl } from 'aws-cdk-lib/aws-s3'
-import { UserPool, UserPoolClient, VerificationEmailStyle, AccountRecovery } from 'aws-cdk-lib/aws-cognito'
+import { Bucket, BucketAccessControl, HttpMethods } from 'aws-cdk-lib/aws-s3'
+import { UserPool, UserPoolClient, VerificationEmailStyle, AccountRecovery, CfnIdentityPool, CfnIdentityPoolRoleAttachment } from 'aws-cdk-lib/aws-cognito'
+import { Role, FederatedPrincipal, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam'
+import { Distribution, ViewerProtocolPolicy, OriginAccessIdentity } from 'aws-cdk-lib/aws-cloudfront'
+import { S3Origin } from 'aws-cdk-lib/aws-cloudfront-origins'
 
 export interface BetaStackProps extends StackProps {
   environment: string
@@ -25,15 +28,18 @@ export class BetaStack extends Stack {
   public readonly apiUrl: string
   public readonly userPoolId: string
   public readonly userPoolClientId: string
+  public readonly identityPoolId: string
   public readonly bucketName: string
 
   constructor(scope: Construct, id: string, props: BetaStackProps) {
     super(scope, id, props)
 
+    const allowedOrigin = this.node.tryGetContext('allowedOrigin') || 'https://juantheengineer.com'
+
     // Cognito User Pool for Authentication
     const userPool = new UserPool(this, 'FluxuryBetaUserPool', {
       userPoolName: 'fluxury-beta-users',
-      selfSignUpEnabled: true,
+      selfSignUpEnabled: false,
       signInAliases: {
         email: true,
         username: true
@@ -75,6 +81,7 @@ export class BetaStack extends Stack {
         adminUserPassword: true,
       },
       preventUserExistenceErrors: true,
+      refreshTokenValidity: Duration.days(7),
     })
 
     // Cognito Authorizer
@@ -102,17 +109,97 @@ export class BetaStack extends Stack {
     })
 
     // S3 Bucket for File Storage
+    const bucketExpirationDays = this.node.tryGetContext('bucketExpirationDays')
+
     const filesBucket = new Bucket(this, 'FluxuryBetaFiles', {
       bucketName: `fluxury-beta-files-${this.account}-${this.region}`,
       versioned: false, // Cost optimization for beta
       accessControl: BucketAccessControl.PRIVATE,
       removalPolicy: RemovalPolicy.DESTROY, // For beta only
       autoDeleteObjects: true, // For beta only
-      lifecycleRules: [{
-        id: 'beta-cleanup',
-        enabled: true,
-        expiration: Duration.days(30), // Auto-delete after 30 days
+      ...(bucketExpirationDays ? {
+        lifecycleRules: [{
+          id: 'beta-cleanup',
+          enabled: true,
+          expiration: Duration.days(bucketExpirationDays),
+        }],
+      } : {}),
+      cors: [{
+        allowedMethods: [HttpMethods.GET],
+        allowedOrigins: [allowedOrigin, 'http://localhost:5173'],
+        allowedHeaders: ['*'],
       }],
+    })
+
+    // Cognito Identity Pool for direct S3 access from browser
+    const identityPool = new CfnIdentityPool(this, 'FluxuryBetaIdentityPool', {
+      identityPoolName: 'fluxury_beta_identity_pool',
+      allowUnauthenticatedIdentities: false,
+      cognitoIdentityProviders: [{
+        clientId: userPoolClient.userPoolClientId,
+        providerName: userPool.userPoolProviderName,
+      }],
+    })
+
+    // Authenticated role for Identity Pool
+    const authenticatedRole = new Role(this, 'FluxuryBetaAuthRole', {
+      assumedBy: new FederatedPrincipal('cognito-identity.amazonaws.com', {
+        'StringEquals': { 'cognito-identity.amazonaws.com:aud': identityPool.ref },
+        'ForAnyValue:StringLike': { 'cognito-identity.amazonaws.com:amr': 'authenticated' },
+      }, 'sts:AssumeRoleWithWebIdentity'),
+    })
+
+    // Grant S3 access to authenticated users
+    authenticatedRole.addToPolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['s3:PutObject', 's3:GetObject', 's3:ListBucket'],
+      resources: [
+        filesBucket.bucketArn,
+        `${filesBucket.bucketArn}/*`,
+      ],
+    }))
+
+    // Attach role to Identity Pool
+    new CfnIdentityPoolRoleAttachment(this, 'FluxuryBetaIdentityPoolRoles', {
+      identityPoolId: identityPool.ref,
+      roles: {
+        'authenticated': authenticatedRole.roleArn,
+      },
+    })
+
+    // Frontend Hosting - S3 + CloudFront
+    const frontendBucket = new Bucket(this, 'FluxuryBetaFrontend', {
+      bucketName: `fluxury-beta-frontend-${this.account}-${this.region}`,
+      accessControl: BucketAccessControl.PRIVATE,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    })
+
+    const oai = new OriginAccessIdentity(this, 'FluxuryBetaOAI', {
+      comment: 'OAI for FluxuryApp Beta frontend',
+    })
+    frontendBucket.grantRead(oai)
+
+    const distribution = new Distribution(this, 'FluxuryBetaDistribution', {
+      defaultBehavior: {
+        origin: new S3Origin(frontendBucket, { originAccessIdentity: oai }),
+        viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      },
+      defaultRootObject: 'index.html',
+      errorResponses: [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: Duration.seconds(0),
+        },
+        {
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: Duration.seconds(0),
+        },
+      ],
     })
 
     // REST API Gateway
@@ -121,10 +208,8 @@ export class BetaStack extends Stack {
       description: 'FluxuryApp Beta Environment API',
       defaultCorsPreflightOptions: {
         allowOrigins: [
-          'http://localhost:5173', // Local development
-          'http://localhost:3000', // Alternative local
-          'https://juantheengineer.com', // Your domain
-          'https://www.juantheengineer.com', // Your domain with www
+          'http://localhost:5173',
+          allowedOrigin,
         ],
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowHeaders: [
@@ -149,7 +234,7 @@ export class BetaStack extends Stack {
       TABLE_NAME: sessionsTable.tableName,
       BUCKET_NAME: filesBucket.bucketName,
       USER_POOL_ID: userPool.userPoolId,
-      CORS_ORIGIN: 'https://juantheengineer.com',
+      CORS_ORIGIN: allowedOrigin,
       ENVIRONMENT: props.environment,
     }
 
@@ -227,6 +312,7 @@ export class BetaStack extends Stack {
     this.apiUrl = api.url
     this.userPoolId = userPool.userPoolId
     this.userPoolClientId = userPoolClient.userPoolClientId
+    this.identityPoolId = identityPool.ref
     this.bucketName = filesBucket.bucketName
 
     // Outputs for easy access
@@ -248,16 +334,34 @@ export class BetaStack extends Stack {
       exportName: `${id}-user-pool-client-id`,
     })
 
+    new CfnOutput(this, 'IdentityPoolId', {
+      value: this.identityPoolId,
+      description: 'Cognito Identity Pool ID',
+      exportName: `${id}-identity-pool-id`,
+    })
+
     new CfnOutput(this, 'S3BucketName', {
       value: this.bucketName,
       description: 'S3 Bucket for file storage',
       exportName: `${id}-s3-bucket`,
     })
 
-    new CfnOutput(this, 'FrontendURL', {
-      value: 'https://juantheengineer.com/fluxury',
-      description: 'Frontend URL (configure after deployment)',
-      exportName: `${id}-frontend-url`,
+    new CfnOutput(this, 'CloudFrontURL', {
+      value: `https://${distribution.distributionDomainName}`,
+      description: 'CloudFront distribution URL',
+      exportName: `${id}-cloudfront-url`,
+    })
+
+    new CfnOutput(this, 'FrontendBucketName', {
+      value: frontendBucket.bucketName,
+      description: 'S3 bucket for frontend assets',
+      exportName: `${id}-frontend-bucket`,
+    })
+
+    new CfnOutput(this, 'CloudFrontDistributionId', {
+      value: distribution.distributionId,
+      description: 'CloudFront distribution ID (for cache invalidation)',
+      exportName: `${id}-cloudfront-dist-id`,
     })
   }
 }
