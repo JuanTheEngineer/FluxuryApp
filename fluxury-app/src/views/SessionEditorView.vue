@@ -29,22 +29,60 @@
 
     <!-- Editor (ready/editing/saving/saved states) -->
     <div v-else>
-      <h1 class="text-xl font-bold text-slate-100">{{ session?.name }}</h1>
+      <!-- Editable session title -->
+      <div class="flex items-center gap-2 mb-2">
+        <input
+          v-if="authStore.isAuthenticated && isEditingTitle"
+          v-model="editableTitle"
+          @blur="saveTitle"
+          @keydown.enter="saveTitle"
+          ref="titleInput"
+          class="text-xl font-bold text-slate-100 bg-transparent border-b border-amber-500 outline-none w-full"
+        />
+        <h1
+          v-else
+          class="text-xl font-bold text-slate-100 cursor-pointer hover:text-amber-500 transition-colors"
+          :class="{ 'cursor-default': !authStore.isAuthenticated }"
+          @click="startEditTitle"
+        >
+          {{ session?.name }}
+          <span v-if="authStore.isAuthenticated" class="text-xs text-slate-500 ml-1">✏️</span>
+        </h1>
+      </div>
 
-      <!-- Quill Editor -->
-      <div ref="editorRef" data-testid="script-editor" class="bg-surface-elevated border border-slate-700 rounded-lg mt-4 min-h-[50vh] overflow-hidden" />
+      <!-- No beat indicator -->
+      <div v-if="!sessionBeatUrl" class="bg-slate-800/50 border border-slate-700 border-dashed rounded-lg px-3 py-2 mb-3 text-sm text-slate-400 flex items-center gap-2">
+        <span>🎵</span>
+        <span>No beat selected</span>
+        <router-link v-if="authStore.isAuthenticated" to="/beats" class="text-amber-500 hover:text-amber-400 ml-auto text-xs">
+          Choose a beat →
+        </router-link>
+      </div>
 
-      <!-- Save Status (replaces old <p>) -->
+      <!-- Quill Editor — click anywhere to focus -->
+      <div
+        @click="focusEditor"
+        data-testid="script-editor"
+        class="bg-surface-elevated border border-slate-700 rounded-lg mt-2 min-h-[50vh] overflow-hidden cursor-text"
+      >
+        <div ref="editorRef" />
+      </div>
+
+      <!-- Save Status -->
       <SaveStatus
+        v-if="authStore.isAuthenticated"
         :status="saveStatus"
         :lastSavedAt="lastSavedAt"
         :onRetry="handleRetry"
       />
+      <div v-else class="mt-3 text-center">
+        <router-link to="/login" class="text-amber-500 text-sm hover:text-amber-400">Sign in to edit</router-link>
+      </div>
     </div>
 
     <!-- Beat Player -->
     <BeatPlayer
-      :beatUrl="session?.beatUrl"
+      :beatUrl="sessionBeatUrl"
       :initialPosition="resumeState?.beatPlaybackPosition"
       :initialVolume="resumeState?.beatVolume"
       :initialLoop="resumeState?.beatLooping"
@@ -61,6 +99,7 @@ import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useBeatStore } from '@/stores/beatStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useAutosave, type SaveStatus as SaveStatusType } from '@/composables/useAutosave'
 import { useSessionLifecycle } from '@/composables/useSessionLifecycle'
 import { useConnectivity } from '@/composables/useConnectivity'
@@ -71,6 +110,7 @@ import SaveStatus from '@/components/SaveStatus.vue'
 
 const sessionStore = useSessionStore()
 const beatStore = useBeatStore()
+const authStore = useAuthStore()
 const route = useRoute()
 
 // Composables
@@ -85,8 +125,21 @@ const session = ref<typeof sessionStore.activeSession>(null)
 const currentDelta = ref<any>(null)
 const resumeState = ref<LocalDraft | null>(null)
 
+// Title editing
+const isEditingTitle = ref(false)
+const editableTitle = ref('')
+const titleInput = ref<HTMLInputElement>()
+
 // Playback state tracking (for persist on save)
 const latestPlaybackState = ref<{ position: number; volume: number; looping: boolean } | null>(null)
+
+// Resolve beat audio URL from beat store by beatId
+const sessionBeatUrl = computed(() => {
+  const beatId = session.value?.beatId
+  if (!beatId) return session.value?.beatUrl || '' // Legacy fallback
+  const beat = beatStore.beats.find((b: any) => b.id === beatId)
+  return beat?.path || ''
+})
 
 // Autosave integration
 const { saveStatus, lastSavedAt, flush, destroy: destroyAutosave } = useAutosave({
@@ -114,6 +167,29 @@ function onPlaybackStateUpdate(state: { position: number; volume: number; loopin
 
 function onBeatAudible() {
   recordBeatAudible()
+}
+
+// --- Title editing ---
+function startEditTitle() {
+  if (!authStore.isAuthenticated) return
+  editableTitle.value = session.value?.name || ''
+  isEditingTitle.value = true
+  nextTick(() => titleInput.value?.focus())
+}
+
+async function saveTitle() {
+  isEditingTitle.value = false
+  const newTitle = editableTitle.value.trim()
+  if (newTitle && session.value && newTitle !== session.value.name) {
+    session.value.name = newTitle
+    await sessionStore.updateSessionName(session.value.id, newTitle)
+  }
+}
+
+// --- Focus editor helper ---
+function focusEditor() {
+  if (!quill.value || !authStore.isAuthenticated) return
+  quill.value.focus()
 }
 
 // --- Session loading with Last_Write_Wins ---
@@ -152,7 +228,8 @@ async function loadSession() {
         }
       }
     } catch {
-      serverDelta = { ops: [{ insert: 'Welcome to FluxuryApp!\n\nStart writing your lyrics here...\n' }] }
+      // Default welcome content for new sessions
+      serverDelta = { ops: [{ insert: '\n' }] }
     }
 
     // Last_Write_Wins: pick newer of server vs local draft
@@ -167,35 +244,59 @@ async function loadSession() {
     transition('ready')
     await nextTick()
 
-    // Initialize Quill
-    quill.value = new Quill(editorRef.value!, { theme: 'snow' })
-    quill.value.setContents(selectedDelta)
-
-    // Set cursor position (wrapped in try/catch — Quill may not be ready for selection immediately)
-    try {
-      if (cursorPosition > 0) {
-        quill.value.setSelection(cursorPosition, 0)
-      } else {
-        const length = quill.value.getLength()
-        quill.value.setSelection(length - 1, 0)
+    // Initialize Quill with proper config for mobile
+    const isReadOnly = !authStore.isAuthenticated
+    quill.value = new Quill(editorRef.value!, {
+      theme: 'snow',
+      readOnly: isReadOnly,
+      placeholder: isReadOnly ? '' : 'Start writing your lyrics...',
+      modules: {
+        toolbar: isReadOnly ? false : [
+          ['bold', 'italic', 'underline'],
+          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+          ['clean']
+        ]
       }
-    } catch {
-      // Quill selection can fail if DOM isn't fully ready; cursor will default to start
+    })
+
+    // Set contents with selection disabled to prevent null offset crash
+    // Quill 2.x fires selection-change during setContents which can crash on empty/complex deltas
+    const safeDeltas = selectedDelta?.ops?.length > 0 ? selectedDelta : { ops: [{ insert: '\n' }] }
+    quill.value.disable()
+    quill.value.setContents(safeDeltas)
+    if (!isReadOnly) {
+      quill.value.enable()
     }
 
-    // Auto-focus the editor
-    quill.value.focus()
-    recordEditorFocused()
+    // If guest, skip autosave wiring
+    if (isReadOnly) return
+
+    // Defer cursor positioning to next tick to let DOM settle
+    await nextTick()
+    setTimeout(() => {
+      if (!quill.value) return
+      try {
+        if (cursorPosition > 0) {
+          quill.value.setSelection(cursorPosition, 0)
+        } else {
+          const length = quill.value.getLength()
+          quill.value.setSelection(length > 0 ? length - 1 : 0, 0)
+        }
+        quill.value.focus()
+        recordEditorFocused()
+      } catch {
+        // Quill selection can fail — non-critical
+      }
+    }, 100)
 
     // Wire Quill text-change to update currentDelta ref
     quill.value.on('text-change', () => {
       currentDelta.value = quill.value!.getContents()
     })
 
-    // Expose test helper for E2E testing (Quill 2.x has selection issues in headless browsers)
+    // Expose test helper for E2E testing
     if (import.meta.env.VITE_DEMO_MODE === 'true') {
       ;(window as any).__simulateEdit = () => {
-        // Directly set the delta ref to simulate a user edit triggering autosave
         currentDelta.value = { ops: [{ insert: 'e2e test content\n' }] }
       }
     }
@@ -219,8 +320,6 @@ function handleRetry() {
 function handleKeydown(e: KeyboardEvent) {
   if (e.code === 'Space' && !editorRef.value?.contains(document.activeElement)) {
     e.preventDefault()
-    // BeatPlayer handles its own play/pause via its UI;
-    // this prevents page scroll when editor is not focused
   }
 }
 
@@ -241,3 +340,41 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
 })
 </script>
+
+<style>
+/* Make Quill editor match dark theme */
+.ql-snow .ql-editor {
+  color: #e2e8f0;
+  font-size: 16px;
+  line-height: 1.8;
+  min-height: 45vh;
+  padding: 1rem;
+}
+.ql-snow .ql-editor.ql-blank::before {
+  color: #64748b;
+  font-style: normal;
+}
+.ql-snow .ql-toolbar {
+  border: none !important;
+  border-bottom: 1px solid #334155 !important;
+  background: #1e293b;
+}
+.ql-snow .ql-toolbar .ql-stroke {
+  stroke: #94a3b8;
+}
+.ql-snow .ql-toolbar .ql-fill {
+  fill: #94a3b8;
+}
+.ql-snow .ql-toolbar button:hover .ql-stroke {
+  stroke: #f59e0b;
+}
+.ql-snow .ql-toolbar button:hover .ql-fill {
+  fill: #f59e0b;
+}
+.ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: #f59e0b;
+}
+.ql-container.ql-snow {
+  border: none !important;
+}
+</style>
