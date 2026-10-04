@@ -90,22 +90,29 @@ export class BetaStack extends Stack {
       identitySource: 'method.request.header.Authorization',
     })
 
-    // DynamoDB Table for Sessions
-    const sessionsTable = new Table(this, 'FluxuryBetaSessions', {
+    // DynamoDB Table for Sessions (PK-only, simple lookups)
+    const sessionsTable = new Table(this, 'FluxuryBetaSessionsV2', {
       tableName: `fluxury-beta-sessions-${props.environment}`,
       partitionKey: { name: 'id', type: AttributeType.STRING },
-      sortKey: { name: 'userId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: false, // Cost optimization for beta
-      removalPolicy: RemovalPolicy.DESTROY, // For beta only
-      timeToLiveAttribute: 'ttl', // Auto-cleanup old sessions
+      pointInTimeRecovery: false,
+      removalPolicy: RemovalPolicy.DESTROY,
     })
 
-    // Add GSI for user queries
+    // GSI: List sessions by owner, sorted by modified date
     sessionsTable.addGlobalSecondaryIndex({
-      indexName: 'UserIndex',
+      indexName: 'OwnerIndex',
       partitionKey: { name: 'userId', type: AttributeType.STRING },
-      sortKey: { name: 'created', type: AttributeType.STRING },
+      sortKey: { name: 'modified', type: AttributeType.STRING },
+    })
+
+    // DynamoDB Table for Beats (PK-only, simple lookups)
+    const beatsTable = new Table(this, 'FluxuryBetaBeats', {
+      tableName: `fluxury-beta-beats-${props.environment}`,
+      partitionKey: { name: 'id', type: AttributeType.STRING },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: false,
+      removalPolicy: RemovalPolicy.DESTROY,
     })
 
     // S3 Bucket for File Storage
@@ -210,6 +217,8 @@ export class BetaStack extends Stack {
         allowOrigins: [
           'http://localhost:5173',
           allowedOrigin,
+          'https://www.fluxury.app',
+          'https://fluxury.app',
         ],
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowHeaders: [
@@ -232,6 +241,7 @@ export class BetaStack extends Stack {
     // Lambda Functions
     const lambdaEnvironment = {
       TABLE_NAME: sessionsTable.tableName,
+      BEATS_TABLE_NAME: beatsTable.tableName,
       BUCKET_NAME: filesBucket.bucketName,
       USER_POOL_ID: userPool.userPoolId,
       CORS_ORIGIN: allowedOrigin,
@@ -264,11 +274,49 @@ export class BetaStack extends Stack {
       },
     })
 
+    // YouTube Metadata Lambda (fetches video info without downloading)
+    const youtubeMetadataLambda = new NodejsFunction(this, 'YouTubeMetadataFunction', {
+      entry: path.join(__dirname, 'lambdas/youtube-metadata.ts'),
+      handler: 'handler',
+      runtime: Runtime.NODEJS_18_X,
+      timeout: Duration.seconds(15),
+      memorySize: 256,
+      environment: lambdaEnvironment,
+      bundling: {
+        externalModules: ['@aws-sdk/*'], // AWS SDK v3 is available in Node 18 runtime
+      },
+    })
+
+    // YouTube Download Lambda (pure JS — downloads audio from YouTube to S3)
+    const youtubeDownloadLambda = new NodejsFunction(this, 'YouTubeDownloadFunction', {
+      entry: path.join(__dirname, 'lambdas/youtube-download.ts'),
+      handler: 'handler',
+      runtime: Runtime.NODEJS_20_X,
+      timeout: Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        BEATS_TABLE_NAME: beatsTable.tableName,
+        BUCKET_NAME: filesBucket.bucketName,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+      },
+    })
+
     // Grant permissions
     sessionsTable.grantReadWriteData(sessionsLambda)
-    sessionsTable.grantReadWriteData(beatsLambda)
+    beatsTable.grantReadWriteData(beatsLambda)
+    beatsTable.grantReadWriteData(youtubeMetadataLambda)
+    beatsTable.grantReadWriteData(youtubeDownloadLambda)
     filesBucket.grantReadWrite(sessionsLambda)
     filesBucket.grantReadWrite(beatsLambda)
+    filesBucket.grantReadWrite(youtubeDownloadLambda)
+
+    // Allow metadata Lambda to invoke the download Lambda
+    youtubeDownloadLambda.grantInvoke(youtubeMetadataLambda)
+
+    // Pass download function name to metadata Lambda
+    youtubeMetadataLambda.addEnvironment('DOWNLOAD_FUNCTION_NAME', youtubeDownloadLambda.functionName)
 
     // API Routes
     const sessionsResource = api.root.addResource('sessions')
@@ -306,6 +354,24 @@ export class BetaStack extends Stack {
     beatsResource.addMethod('POST', new LambdaIntegration(beatsLambda), {
       authorizer,
       authorizationType: AuthorizationType.COGNITO,
+    })
+
+    // YouTube beat import endpoint
+    const beatsFromUrlResource = beatsResource.addResource('from-url')
+    beatsFromUrlResource.addMethod('POST', new LambdaIntegration(youtubeMetadataLambda), {
+      authorizer,
+      authorizationType: AuthorizationType.COGNITO,
+    })
+
+    // Public endpoints (no auth required — guest/read-only access)
+    const publicResource = api.root.addResource('public')
+    const publicSessionsResource = publicResource.addResource('sessions')
+    publicSessionsResource.addMethod('GET', new LambdaIntegration(sessionsLambda), {
+      authorizationType: AuthorizationType.NONE,
+    })
+    const publicSessionResource = publicSessionsResource.addResource('{id}')
+    publicSessionResource.addMethod('GET', new LambdaIntegration(sessionsLambda), {
+      authorizationType: AuthorizationType.NONE,
     })
 
     // Store important values
