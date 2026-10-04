@@ -63,8 +63,11 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
     const authStore = useAuthStore()
 
-    // Check auth status if not already checked
-    if (!authStore.isAuthenticated && !authStore.isLoading) {
+    // Resolve auth exactly once per app load, and always wait for it to
+    // settle before deciding on protected routes. Gating on isLoading here
+    // raced the check (checkAuthStatus sets isLoading=true immediately) and
+    // could bounce a logged-in user to /login on refresh.
+    if (!authStore.authChecked) {
         await authStore.checkAuthStatus()
     }
 
