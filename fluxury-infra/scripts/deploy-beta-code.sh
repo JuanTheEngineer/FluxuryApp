@@ -86,11 +86,7 @@ fi
 echo -e "${YELLOW}🔨 Building TypeScript...${NC}"
 npm run build
 
-# Bootstrap CDK
-echo -e "${YELLOW}🏗️ Bootstrapping CDK...${NC}"
-cdk bootstrap aws://${ACCOUNT_ID}/${REGION}
-
-# Update CDK config to use the correct entry point
+# Update CDK config to use the correct entry point (must be before bootstrap/synth)
 cat > cdk.json << 'EOF'
 {
   "app": "npx ts-node --prefer-ts-exts bin/fluxury-infra-beta.ts",
@@ -106,6 +102,10 @@ cat > cdk.json << 'EOF'
   }
 }
 EOF
+
+# Bootstrap CDK
+echo -e "${YELLOW}🏗️ Bootstrapping CDK...${NC}"
+cdk bootstrap aws://${ACCOUNT_ID}/${REGION}
 
 # Synthesize stack
 echo -e "${YELLOW}🔍 Synthesizing CDK stack...${NC}"
