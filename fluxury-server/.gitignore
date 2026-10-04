@@ -1,0 +1,4 @@
+node_modules
+
+# Generated player-script blobs (yt-dlp artifacts, ~2.4MB each)
+*-player-script.js
