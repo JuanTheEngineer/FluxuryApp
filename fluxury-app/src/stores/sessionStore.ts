@@ -165,6 +165,18 @@ export const useSessionStore = defineStore('sessionStore', {
       }
     },
 
+    async updateSessionName(id: string, name: string) {
+      try {
+        await sessionsApi.updateSession(id, { name })
+        const index = this.sessions.findIndex(s => s.id === id)
+        if (index !== -1) {
+          this.sessions[index] = { ...this.sessions[index], name }
+        }
+      } catch (err: any) {
+        console.error('Failed to update session name:', err)
+      }
+    },
+
     async saveScript(id: string, delta: unknown): Promise<string | null> {
       try {
         const scriptUrl = await storageApi.uploadSessionScript(id, delta)
@@ -172,7 +184,6 @@ export const useSessionStore = defineStore('sessionStore', {
           name: this.activeSession?.name ?? '',
           artworkUrl: this.activeSession?.artworkUrl ?? '',
           script: scriptUrl,
-          beatUrl: this.activeSession?.beatUrl ?? '',
         })
         return scriptUrl
       } catch (err: any) {

@@ -41,20 +41,29 @@
           {{ isLooping ? 'Loop ∞' : 'Loop Off' }}
         </button>
 
-        <!-- Volume Control -->
-        <div class="flex items-center gap-2 ml-4">
-          <span class="text-sm">Vol</span>
-          <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              v-model.number="volume"
-              @input="updateVolume"
-              class="w-20"
-          />
-          <span class="text-xs text-slate-400">{{ Math.round(volume * 100) }}%</span>
-        </div>
+        <!-- Write button -->
+        <button
+          v-if="props.showWriteButton"
+          @click="emit('start-session')"
+          class="ml-auto px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-500 transition-colors"
+        >
+          ✍️ Write
+        </button>
+      </div>
+
+      <!-- Volume -->
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-slate-400">Vol</span>
+        <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            v-model.number="volume"
+            @input="updateVolume"
+            class="flex-1"
+        />
+        <span class="text-xs text-slate-400 w-8">{{ Math.round(volume * 100) }}%</span>
       </div>
     </div>
   </div>
@@ -75,11 +84,13 @@ const props = defineProps<{
   initialPosition?: number    // seconds — seek to this on load, stay paused
   initialVolume?: number      // 0–1, overrides default 0.8
   initialLoop?: boolean       // overrides default true
+  showWriteButton?: boolean   // show "Write" button in the player
 }>()
 
 const emit = defineEmits<{
   'beat-audible': []
   'update:playbackState': [state: { position: number; volume: number; looping: boolean }]
+  'start-session': []
 }>()
 
 const sound = ref<Howl | null>(null)

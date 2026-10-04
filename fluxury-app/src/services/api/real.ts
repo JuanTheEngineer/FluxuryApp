@@ -27,6 +27,7 @@ import {
   getCurrentUser as authGetCurrentUser,
 } from '@/api/auth-interceptor'
 import { S3Service } from '@/services/s3Service'
+import axios from 'axios'
 
 const sessionsBasePath =
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
@@ -38,20 +39,42 @@ const sessionAxios = createAuthenticatedClient()
 sessionAxios.defaults.baseURL = sessionsBasePath
 sessionAxios.defaults.headers.common['Content-Type'] = 'application/json'
 
+// Public (unauthenticated) client for guest access
+const publicAxios = axios.create({
+  baseURL: sessionsBasePath,
+  headers: { 'Content-Type': 'application/json' },
+})
+
 const beatAxios = createAuthenticatedClient()
 beatAxios.defaults.baseURL = beatsBasePath
 beatAxios.defaults.headers.common['Content-Type'] = 'application/json'
 
 // --- Sessions API (axios-based; replaces the OpenAPI-generated stub) ---
 export const sessionsApi = {
-  listSessions: () =>
-    sessionAxios
-      .get<{ sessions: SessionSummary[] }>('/sessions')
-      .then((r) => ({ data: r.data })),
-  getSession: (id: string) =>
-    sessionAxios
-      .get<GetSessionResponseContent>(`/sessions/${id}`)
-      .then((r) => ({ data: r.data })),
+  listSessions: async () => {
+    const authenticated = await authIsAuthenticated()
+    if (authenticated) {
+      return sessionAxios
+        .get<{ sessions: SessionSummary[] }>('/sessions')
+        .then((r) => ({ data: r.data }))
+    }
+    // Guest: use public endpoint
+    return publicAxios
+      .get<{ sessions: SessionSummary[] }>('/public/sessions')
+      .then((r) => ({ data: r.data }))
+  },
+  getSession: async (id: string) => {
+    const authenticated = await authIsAuthenticated()
+    if (authenticated) {
+      return sessionAxios
+        .get<GetSessionResponseContent>(`/sessions/${id}`)
+        .then((r) => ({ data: r.data }))
+    }
+    // Guest: use public endpoint
+    return publicAxios
+      .get<GetSessionResponseContent>(`/public/sessions/${id}`)
+      .then((r) => ({ data: r.data }))
+  },
   createSession: (payload: CreateSessionRequestContent) =>
     sessionAxios
       .post<GetSessionResponseContent>('/sessions', payload)
@@ -78,7 +101,7 @@ export const beatsApi = {
     beatAxios.delete(`/beats/${id}`).then(() => ({ data: { success: true } })),
 } satisfies BeatsApiContract
 
-// --- Auth API (wraps existing auth-interceptor helpers) ---
+// --- Auth API (wraps Amplify Cognito auth) ---
 export const authApi = {
   getCurrentUser: async (): Promise<AuthUser> => {
     const u = await authGetCurrentUser()
@@ -89,18 +112,22 @@ export const authApi = {
     } as AuthUser
   },
   isAuthenticated: () => authIsAuthenticated(),
-  login: async (_username: string, _password: string) => {
-    // Real Cognito sign-in is handled in authStore via aws-amplify directly today.
-    // Punted: a unified login surface here would route through `signIn` from
-    // 'aws-amplify/auth' and translate the result. Out of scope for stabilization.
-    throw new Error(
-      'real.authApi.login is not yet implemented (post-stabilization)',
-    )
+  login: async (username: string, password: string) => {
+    const { signIn } = await import('aws-amplify/auth')
+    try {
+      const result = await signIn({ username, password })
+      if (result.isSignedIn) {
+        return { success: true }
+      }
+      return { success: false, error: 'Sign-in incomplete' }
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Login failed' }
+    }
   },
   logout: async () => {
-    throw new Error(
-      'real.authApi.logout is not yet implemented (post-stabilization)',
-    )
+    const { signOut } = await import('aws-amplify/auth')
+    await signOut()
+    return { success: true }
   },
 } satisfies AuthApiContract
 
