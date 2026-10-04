@@ -1,23 +1,33 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } from '@aws-sdk/lib-dynamodb'
 import { v4 as uuid } from 'uuid'
 
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION })
 const docClient = DynamoDBDocumentClient.from(dynamoClient)
 
 const TABLE_NAME = process.env.TABLE_NAME!
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
-  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-  'Access-Control-Allow-Credentials': 'true',
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || '*').split(',').concat([
+  'https://www.fluxury.app',
+  'https://fluxury.app',
+  'http://localhost:5173',
+])
+
+function getCorsOrigin(event: APIGatewayProxyEvent): string {
+  const requestOrigin = event.headers?.origin || event.headers?.Origin || ''
+  if (ALLOWED_ORIGINS.includes(requestOrigin)) return requestOrigin
+  return ALLOWED_ORIGINS[0]
 }
 
-function createResponse(statusCode: number, body: any): APIGatewayProxyResult {
+function createResponse(statusCode: number, body: any, origin: string): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: CORS_HEADERS,
+    headers: {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+      'Access-Control-Allow-Credentials': 'true',
+    },
     body: JSON.stringify(body),
   }
 }
@@ -28,218 +38,168 @@ function getUserFromEvent(event: APIGatewayProxyEvent): string {
 }
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  console.log('Event:', JSON.stringify(event, null, 2))
+  const origin = getCorsOrigin(event)
 
-  // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
-    return createResponse(200, {})
+    return createResponse(200, {}, origin)
   }
 
   try {
-    const { httpMethod, pathParameters, body } = event
+    const { httpMethod, pathParameters, body, resource } = event
     const userId = getUserFromEvent(event)
+
+    // Public endpoints (no auth required)
+    if (resource?.startsWith('/public/')) {
+      if (httpMethod === 'GET') {
+        if (pathParameters?.id) {
+          return await getSession(pathParameters.id, origin)
+        }
+        return await listSessionsPublic(origin)
+      }
+      return createResponse(405, { error: 'Method not allowed' }, origin)
+    }
 
     switch (httpMethod) {
       case 'GET':
         if (pathParameters?.id) {
-          // Get specific session
-          return await getSession(pathParameters.id, userId)
-        } else {
-          // List user sessions
-          return await listSessions(userId)
+          return await getSession(pathParameters.id, origin)
         }
+        return await listSessions(userId, origin)
 
       case 'POST':
-        // Create new session
-        return await createSession(body, userId)
+        return await createSession(body, userId, origin)
 
       case 'PUT':
-        // Update session
-        if (!pathParameters?.id) {
-          return createResponse(400, { error: 'Session ID required' })
-        }
-        return await updateSession(pathParameters.id, body, userId)
+        if (!pathParameters?.id) return createResponse(400, { error: 'Session ID required' }, origin)
+        return await updateSession(pathParameters.id, body, userId, origin)
 
       case 'DELETE':
-        // Delete session
-        if (!pathParameters?.id) {
-          return createResponse(400, { error: 'Session ID required' })
-        }
-        return await deleteSession(pathParameters.id, userId)
+        if (!pathParameters?.id) return createResponse(400, { error: 'Session ID required' }, origin)
+        return await deleteSession(pathParameters.id, userId, origin)
 
       default:
-        return createResponse(405, { error: 'Method not allowed' })
+        return createResponse(405, { error: 'Method not allowed' }, origin)
     }
   } catch (error) {
     console.error('Error:', error)
-    return createResponse(500, { error: 'Internal server error' })
+    return createResponse(500, { error: 'Internal server error' }, origin)
   }
 }
 
-async function listSessions(userId: string): Promise<APIGatewayProxyResult> {
-  try {
-    const command = new QueryCommand({
-      TableName: TABLE_NAME,
-      IndexName: 'UserIndex',
-      KeyConditionExpression: 'userId = :userId',
-      ExpressionAttributeValues: {
-        ':userId': userId,
-      },
-      ScanIndexForward: false, // Most recent first
-    })
+// --- List sessions by owner (Query on OwnerIndex) ---
+async function listSessions(userId: string, origin: string): Promise<APIGatewayProxyResult> {
+  const command = new QueryCommand({
+    TableName: TABLE_NAME,
+    IndexName: 'OwnerIndex',
+    KeyConditionExpression: 'userId = :uid',
+    ExpressionAttributeValues: { ':uid': userId },
+    ScanIndexForward: false, // Most recent first
+  })
+  const result = await docClient.send(command)
+  return createResponse(200, { sessions: result.Items || [] }, origin)
+}
 
+// --- Public list (single-user: scan all sessions) ---
+async function listSessionsPublic(origin: string): Promise<APIGatewayProxyResult> {
+  const command = new ScanCommand({
+    TableName: TABLE_NAME,
+    ProjectionExpression: 'id, userId, #n, author, beatId, artworkUrl, created, modified',
+    ExpressionAttributeNames: { '#n': 'name' },
+  })
+  const result = await docClient.send(command)
+  const sessions = (result.Items || []).sort((a: any, b: any) =>
+    (b.modified || b.created || '').localeCompare(a.modified || a.created || '')
+  )
+  return createResponse(200, { sessions }, origin)
+}
+
+// --- Get single session by ID (simple GetItem, PK only) ---
+async function getSession(sessionId: string, origin: string): Promise<APIGatewayProxyResult> {
+  const command = new GetCommand({
+    TableName: TABLE_NAME,
+    Key: { id: sessionId },
+  })
+  const result = await docClient.send(command)
+  if (!result.Item) return createResponse(404, { error: 'Session not found' }, origin)
+  return createResponse(200, result.Item, origin)
+}
+
+// --- Create session ---
+async function createSession(bodyString: string | null, userId: string, origin: string): Promise<APIGatewayProxyResult> {
+  const body = bodyString ? JSON.parse(bodyString) : {}
+  const now = new Date().toISOString()
+  const sessionId = uuid()
+
+  const session = {
+    id: sessionId,
+    userId,
+    name: body.name || 'Untitled Session',
+    author: body.author || 'Unknown Artist',
+    beatId: body.beatId || '',
+    artworkUrl: body.artworkUrl || '',
+    script: body.script || '',
+    created: now,
+    modified: now,
+  }
+
+  await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: session }))
+  return createResponse(201, session, origin)
+}
+
+// --- Update session ---
+async function updateSession(sessionId: string, bodyString: string | null, userId: string, origin: string): Promise<APIGatewayProxyResult> {
+  const body = bodyString ? JSON.parse(bodyString) : {}
+  const now = new Date().toISOString()
+
+  const updates: string[] = ['modified = :modified']
+  const values: any = { ':modified': now }
+  const names: any = {}
+
+  if (body.name !== undefined) { updates.push('#n = :name'); names['#n'] = 'name'; values[':name'] = body.name }
+  if (body.author !== undefined) { updates.push('author = :author'); values[':author'] = body.author }
+  if (body.beatId !== undefined) { updates.push('beatId = :beatId'); values[':beatId'] = body.beatId }
+  if (body.artworkUrl !== undefined) { updates.push('artworkUrl = :artworkUrl'); values[':artworkUrl'] = body.artworkUrl }
+  if (body.script !== undefined) { updates.push('script = :script'); values[':script'] = body.script }
+
+  const command = new UpdateCommand({
+    TableName: TABLE_NAME,
+    Key: { id: sessionId },
+    UpdateExpression: `SET ${updates.join(', ')}`,
+    ExpressionAttributeValues: { ...values, ':owner': userId },
+    ExpressionAttributeNames: Object.keys(names).length > 0 ? names : undefined,
+    ConditionExpression: 'userId = :owner',
+    ReturnValues: 'ALL_NEW',
+  })
+
+  try {
     const result = await docClient.send(command)
-
-    return createResponse(200, {
-      sessions: result.Items || [],
-    })
-  } catch (error) {
-    console.error('Error listing sessions:', error)
-    return createResponse(500, { error: 'Failed to list sessions' })
+    return createResponse(200, result.Attributes, origin)
+  } catch (err: any) {
+    if (err.name === 'ConditionalCheckFailedException') {
+      return createResponse(403, { error: 'Not your session' }, origin)
+    }
+    throw err
   }
 }
 
-async function getSession(sessionId: string, userId: string): Promise<APIGatewayProxyResult> {
-  try {
-    const command = new GetCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        id: sessionId,
-        userId: userId,
-      },
-    })
+// --- Delete session ---
+async function deleteSession(sessionId: string, userId: string, origin: string): Promise<APIGatewayProxyResult> {
+  const command = new DeleteCommand({
+    TableName: TABLE_NAME,
+    Key: { id: sessionId },
+    ConditionExpression: 'userId = :owner',
+    ExpressionAttributeValues: { ':owner': userId },
+    ReturnValues: 'ALL_OLD',
+  })
 
+  try {
     const result = await docClient.send(command)
-
-    if (!result.Item) {
-      return createResponse(404, { error: 'Session not found' })
+    if (!result.Attributes) return createResponse(404, { error: 'Session not found' }, origin)
+    return createResponse(200, { message: 'Session deleted' }, origin)
+  } catch (err: any) {
+    if (err.name === 'ConditionalCheckFailedException') {
+      return createResponse(403, { error: 'Not your session' }, origin)
     }
-
-    return createResponse(200, result.Item)
-  } catch (error) {
-    console.error('Error getting session:', error)
-    return createResponse(500, { error: 'Failed to get session' })
-  }
-}
-
-async function createSession(bodyString: string | null, userId: string): Promise<APIGatewayProxyResult> {
-  try {
-    const body = bodyString ? JSON.parse(bodyString) : {}
-    const now = new Date().toISOString()
-    const sessionId = uuid()
-
-    const session = {
-      id: sessionId,
-      userId: userId,
-      name: body.name || 'Untitled Session',
-      author: body.author || 'Unknown Artist',
-      beatUrl: body.beatUrl || '',
-      artworkUrl: body.artworkUrl || '',
-      script: body.script || JSON.stringify({ ops: [{ insert: 'Start writing your lyrics here...\n' }] }),
-      created: now,
-      modified: now,
-      ttl: Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60), // 90 days TTL
-    }
-
-    const command = new PutCommand({
-      TableName: TABLE_NAME,
-      Item: session,
-    })
-
-    await docClient.send(command)
-
-    return createResponse(201, session)
-  } catch (error) {
-    console.error('Error creating session:', error)
-    return createResponse(500, { error: 'Failed to create session' })
-  }
-}
-
-async function updateSession(sessionId: string, bodyString: string | null, userId: string): Promise<APIGatewayProxyResult> {
-  try {
-    const body = bodyString ? JSON.parse(bodyString) : {}
-    const now = new Date().toISOString()
-
-    const updateExpression = []
-    const expressionAttributeValues: any = {
-      ':modified': now,
-    }
-    const expressionAttributeNames: any = {}
-
-    // Build dynamic update expression
-    if (body.name !== undefined) {
-      updateExpression.push('#name = :name')
-      expressionAttributeNames['#name'] = 'name'
-      expressionAttributeValues[':name'] = body.name
-    }
-
-    if (body.author !== undefined) {
-      updateExpression.push('author = :author')
-      expressionAttributeValues[':author'] = body.author
-    }
-
-    if (body.beatUrl !== undefined) {
-      updateExpression.push('beatUrl = :beatUrl')
-      expressionAttributeValues[':beatUrl'] = body.beatUrl
-    }
-
-    if (body.artworkUrl !== undefined) {
-      updateExpression.push('artworkUrl = :artworkUrl')
-      expressionAttributeValues[':artworkUrl'] = body.artworkUrl
-    }
-
-    if (body.script !== undefined) {
-      updateExpression.push('script = :script')
-      expressionAttributeValues[':script'] = body.script
-    }
-
-    updateExpression.push('modified = :modified')
-
-    const command = new UpdateCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        id: sessionId,
-        userId: userId,
-      },
-      UpdateExpression: `SET ${updateExpression.join(', ')}`,
-      ExpressionAttributeValues: expressionAttributeValues,
-      ExpressionAttributeNames: Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-      ReturnValues: 'ALL_NEW',
-    })
-
-    const result = await docClient.send(command)
-
-    if (!result.Attributes) {
-      return createResponse(404, { error: 'Session not found' })
-    }
-
-    return createResponse(200, result.Attributes)
-  } catch (error) {
-    console.error('Error updating session:', error)
-    return createResponse(500, { error: 'Failed to update session' })
-  }
-}
-
-async function deleteSession(sessionId: string, userId: string): Promise<APIGatewayProxyResult> {
-  try {
-    const command = new DeleteCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        id: sessionId,
-        userId: userId,
-      },
-      ReturnValues: 'ALL_OLD',
-    })
-
-    const result = await docClient.send(command)
-
-    if (!result.Attributes) {
-      return createResponse(404, { error: 'Session not found' })
-    }
-
-    return createResponse(200, { message: 'Session deleted successfully' })
-  } catch (error) {
-    console.error('Error deleting session:', error)
-    return createResponse(500, { error: 'Failed to delete session' })
+    throw err
   }
 }
