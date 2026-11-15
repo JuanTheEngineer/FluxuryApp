@@ -5,9 +5,26 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ---
 
-## P0 — Now
+## P0 — Now: "New Session" button is broken
 
-_Nothing blocking. Pick the next batch below._
+The main create action breaks the app. *(reported 2026-11-14)*
+
+- [x] **"New Session" now opens the beat browser in "Pick a beat" mode** (`/beats?new=1`), with a secondary **Write without a beat** button that creates a blank session. It used to link to `/session/new`, a route that doesn't exist, so "new" was treated as a session ID. *(fixed, needs deploy + live check)*
+- [x] **Stale session after a failed load**: `loadSession` now clears `activeSession` before fetching, and the editor checks that the loaded session's ID matches the route. *(fixed, needs deploy + live check)*
+
+---
+
+## P1 — Batch E: Artwork (beats + sessions)
+
+Same feature area: images on beats and sessions. **Needs a design pass before building.** *(reported 2026-11-14)*
+
+What already exists:
+- Beats have a `thumbnailUrl` field, and the beat browser list shows it when it's present.
+- Sessions have an `artworkUrl` field, and `S3Service.uploadArtwork()` exists, but no UI calls it.
+
+- [ ] **Show beat artwork in the player and the session editor**: `BeatPlayer` never renders the beat's image. Also confirm whether the live beats actually have `thumbnailUrl` set.
+- [ ] **Session artwork**: let the user set or change a session's cover at any time, including after creation. Open question: upload a photo, default to the beat's artwork, or both?
+- [ ] **Show session artwork in the session list**
 
 ---
 
