@@ -24,3 +24,8 @@ pnpm-debug.log*
 
 # openapi-generator
 /src/api/open-api
+
+# Playwright output
+test-results/
+playwright-report/
+playwright-report-beta/
