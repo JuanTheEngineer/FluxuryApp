@@ -56,6 +56,6 @@ Stop testing on the only environment, which users also use.
 
 ## Done
 
-- [x] Lyrics save on the live site: S3 bucket CORS now allows `PUT` from the app's origins. Verified live on 2026-11-14, desktop save→reopen (CORS commit, see git log)
+- [x] Lyrics save on the live site: S3 bucket CORS now allows `PUT` from the app's origins. Verified live on 2026-11-14, desktop save→reopen (`d25248c`)
 - [x] Reopened sessions now load S3-backed lyrics, and failed saves show "error" instead of "saved" (`d5e09b7`)
 - [x] Real-mode save→reopen integration test (`d5e09b7`)
