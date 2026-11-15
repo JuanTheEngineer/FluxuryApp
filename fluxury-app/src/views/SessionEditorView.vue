@@ -98,6 +98,7 @@ import { useRoute, onBeforeRouteLeave } from 'vue-router'
 import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
 import { useSessionStore } from '@/stores/sessionStore'
+import { storageApi } from '@/services/api'
 import { useBeatStore } from '@/stores/beatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useAutosave, type SaveStatus as SaveStatusType } from '@/composables/useAutosave'
@@ -215,11 +216,24 @@ async function loadSession() {
     // Parse server delta
     let serverDelta: any = { ops: [{ insert: '\n' }] }
     let serverTimestamp = 0
+    let loadScriptError: unknown = null
     try {
+      let parsed: any = null
       if (session.value.script?.startsWith('data:application/json;base64,')) {
-        const base64Data = session.value.script.split(',')[1]
-        const scriptData = atob(base64Data)
-        const parsed = JSON.parse(scriptData)
+        // Demo mode: script is inlined as a data URL
+        parsed = JSON.parse(atob(session.value.script.split(',')[1]))
+      } else if (session.value.script?.startsWith('s3://')) {
+        // Real mode: script is an S3 pointer. A download failure must NOT fall
+        // back to an empty document (autosave would then overwrite saved lyrics),
+        // so it is rethrown to the outer handler -> error state with retry.
+        try {
+          parsed = await storageApi.downloadSessionScript(id)
+        } catch (e) {
+          loadScriptError = e
+        }
+      }
+      if (loadScriptError) throw loadScriptError
+      if (parsed) {
         if (parsed.delta) {
           serverDelta = parsed.delta
           serverTimestamp = parsed.editTimestamp || 0
@@ -227,7 +241,8 @@ async function loadSession() {
           serverDelta = parsed
         }
       }
-    } catch {
+    } catch (e) {
+      if (loadScriptError) throw e
       // Default welcome content for new sessions
       serverDelta = { ops: [{ insert: '\n' }] }
     }

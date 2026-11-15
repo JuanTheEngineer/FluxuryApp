@@ -177,7 +177,9 @@ export const useSessionStore = defineStore('sessionStore', {
       }
     },
 
-    async saveScript(id: string, delta: unknown): Promise<string | null> {
+    // Rethrows on failure: useAutosave treats a resolved promise as "saved",
+    // so swallowing the error here made failed saves look successful.
+    async saveScript(id: string, delta: unknown): Promise<string> {
       try {
         const scriptUrl = await storageApi.uploadSessionScript(id, delta)
         await sessionsApi.updateSession(id, {
@@ -189,7 +191,7 @@ export const useSessionStore = defineStore('sessionStore', {
       } catch (err: any) {
         const errorMessage = err.response?.data?.message || err.message || 'Failed to save script'
         this.setError(errorMessage)
-        return null
+        throw err
       }
     },
   },

@@ -8,7 +8,7 @@ import Quill from 'quill'
 vi.mock('quill', () => ({
   default: vi.fn().mockImplementation(() => ({
     setContents: vi.fn(), getContents: vi.fn(() => ({ ops: [{ insert: 'test\n' }] })),
-    setSelection: vi.fn(), getLength: vi.fn(() => 5), focus: vi.fn(), on: vi.fn(),
+    setSelection: vi.fn(), getLength: vi.fn(() => 5), focus: vi.fn(), on: vi.fn(), disable: vi.fn(), enable: vi.fn(),
   })),
 }))
 vi.mock('quill/dist/quill.snow.css', () => ({}))
