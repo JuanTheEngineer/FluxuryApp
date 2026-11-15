@@ -131,10 +131,20 @@ export class BetaStack extends Stack {
           expiration: Duration.days(bucketExpirationDays),
         }],
       } : {}),
+      // Browser uploads session scripts directly (PutObject via Cognito Identity
+      // Pool creds), so PUT must be allowed for every origin the app is served from.
+      // Keep in sync with the API Gateway allowOrigins below.
       cors: [{
-        allowedMethods: [HttpMethods.GET],
-        allowedOrigins: [allowedOrigin, 'http://localhost:5173'],
+        allowedMethods: [HttpMethods.GET, HttpMethods.PUT, HttpMethods.HEAD],
+        allowedOrigins: [
+          'http://localhost:5173',
+          allowedOrigin,
+          'https://www.fluxury.app',
+          'https://fluxury.app',
+          'https://dh6p364plnqad.cloudfront.net',
+        ],
         allowedHeaders: ['*'],
+        exposedHeaders: ['ETag'],
       }],
     })
 
