@@ -5,12 +5,9 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ---
 
-## P0 — Now: "New Session" button is broken
+## P0 — Now
 
-The main create action breaks the app. *(reported 2026-11-14)*
-
-- [x] **"New Session" now opens the beat browser in "Pick a beat" mode** (`/beats?new=1`), with a secondary **Write without a beat** button that creates a blank session. It used to link to `/session/new`, a route that doesn't exist, so "new" was treated as a session ID. *(fixed, needs deploy + live check)*
-- [x] **Stale session after a failed load**: `loadSession` now clears `activeSession` before fetching, and the editor checks that the loaded session's ID matches the route. *(fixed, needs deploy + live check)*
+_Nothing blocking. New Session fix shipped (`4d12835`)._
 
 ---
 
@@ -32,7 +29,7 @@ What already exists:
 
 These stop the save bug from coming back without anyone noticing.
 
-- [ ] **CDK assertion test**: bucket CORS allows `PUT` from every app origin (`fluxury-infra/test`, Jest). This would have caught the P0 bug.
+- [x] **CDK assertion test**: bucket CORS allows `GET` + `PUT` from every app origin (`fluxury-infra/test/beta-stack.cors.test.ts`). Run with `cd fluxury-infra && npm test`.
 - [ ] **Preflight check in `scripts/verify-deployment.sh`**: `curl -X OPTIONS` to the bucket with `Origin: https://www.fluxury.app`, fail if no allow header
 - [ ] **Playwright e2e test against a deployed env**: log in, type, see "saved", reload in a fresh context, lyrics are there (`tests/e2e/smoke.spec.ts`)
 - [ ] **Data protection**: S3 versioning plus DynamoDB point-in-time recovery
@@ -60,7 +57,7 @@ Stop testing on the only environment, which users also use.
 
 - [ ] **Fix the 28 existing `vue-tsc` errors** (`beatId`, `Timeout` types, mock delta typing, and others)
 - [ ] **One API contract**: generate client types from `fluxury-smithy/` and make the mock return the same shapes as the real API (mock uses `data:` URLs, real uses `s3://`, and that mismatch is how the reopen bug hid)
-- [ ] **Stop committing build output**: `fluxury-infra/lib/*.js` next to the `.ts` files, `cdk.out`, `cookies.txt`
+- [ ] **Stop committing build output**: `fluxury-infra/lib/*.js` next to the `.ts` files, `cdk.out`, `cookies.txt`. The stale `lib/beta-stack.js` made Jest test old code on 2026-11-14 (worked around via `moduleFileExtensions`). Delete the stale `.js` files.
 - [ ] **Decide on tracking `.env.beta`** (public-ish IDs, not secrets)
 - [ ] **`tests/setup.ts` forces demo mode globally**: real-mode tests need a module reset to escape it
 
@@ -73,6 +70,7 @@ Stop testing on the only environment, which users also use.
 
 ## Done
 
+- [x] "New Session" opens a "Pick a beat" view with a **Write without a beat** option, and a failed load no longer reuses the previous session (`4d12835`)
 - [x] Lyrics save on the live site: S3 bucket CORS now allows `PUT` from the app's origins. Verified live on 2026-11-14, desktop save→reopen (`d25248c`)
 - [x] Reopened sessions now load S3-backed lyrics, and failed saves show "error" instead of "saved" (`d5e09b7`)
 - [x] Real-mode save→reopen integration test (`d5e09b7`)
