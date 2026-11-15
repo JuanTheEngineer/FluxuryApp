@@ -75,3 +75,8 @@ case "${1:-frontend}" in
     exit 1
     ;;
 esac
+
+# Post-deploy smoke check (read-only). Frontend changes can take ~60s to
+# propagate through CloudFront; CORS and API checks are immediate.
+echo ""
+"$ROOT_DIR/scripts/verify-deployment.sh"

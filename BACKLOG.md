@@ -30,7 +30,7 @@ What already exists:
 These stop the save bug from coming back without anyone noticing.
 
 - [x] **CDK assertion test**: bucket CORS allows `GET` + `PUT` from every app origin (`fluxury-infra/test/beta-stack.cors.test.ts`). Run with `cd fluxury-infra && npm test`.
-- [ ] **Preflight check in `scripts/verify-deployment.sh`**: `curl -X OPTIONS` to the bucket with `Origin: https://www.fluxury.app`, fail if no allow header
+- [x] **Live smoke check `scripts/verify-deployment.sh`**: preflights S3 `PUT`/`GET` from every app origin, checks API CORS and that the frontend loads. Read-only, no login. Runs automatically at the end of `./deploy.sh`.
 - [ ] **Playwright e2e test against a deployed env**: log in, type, see "saved", reload in a fresh context, lyrics are there (`tests/e2e/smoke.spec.ts`)
 - [ ] **Data protection**: S3 versioning plus DynamoDB point-in-time recovery
 
@@ -64,7 +64,7 @@ Stop testing on the only environment, which users also use.
 ## P3 — Later / unverified
 
 - [ ] **Beat seeding**: confirm all 5 beats exist in the live backend
-- [ ] **Run `scripts/verify-deployment.sh` end to end** at least once
+- [x] Run `scripts/verify-deployment.sh` end to end. The script didn't exist, so it was created; all 11 checks pass live (2026-11-14)
 
 ---
 
