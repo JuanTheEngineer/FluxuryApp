@@ -204,7 +204,7 @@ async function loadSession() {
     // Fetch from server
     await sessionStore.loadSession(id)
     session.value = sessionStore.activeSession
-    if (!session.value) {
+    if (!session.value || session.value.id !== id) {
       transition('error')
       return
     }

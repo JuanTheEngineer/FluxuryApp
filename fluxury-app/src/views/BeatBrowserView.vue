@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useBeatStore } from '@/stores/beatStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useAuthStore } from '@/stores/authStore'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import BeatPlayer from '@/components/BeatPlayer.vue'
 import type { CreateBeatRequestContent } from '@/services/api'
@@ -12,7 +12,12 @@ const store = useBeatStore()
 const sessionStore = useSessionStore()
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const { beats, selectedBeat } = storeToRefs(store)
+
+// Arrived via "+ New Session": the page's job is picking a beat for a new session
+const isNewSessionFlow = computed(() => route.query.new === '1')
+const isCreating = ref(false)
 
 const url = ref('')
 const showForm = ref(false)
@@ -63,12 +68,28 @@ const select = (beat: any) => {
 }
 
 const startSessionWithBeat = async () => {
-  if (!selectedBeat.value) return
-  const id = await sessionStore.createSession({
-    name: selectedBeat.value.name,
-    beatId: selectedBeat.value.id,
-  })
-  if (id) router.push(`/session/${id}`)
+  if (!selectedBeat.value || isCreating.value) return
+  isCreating.value = true
+  try {
+    const id = await sessionStore.createSession({
+      name: selectedBeat.value.name,
+      beatId: selectedBeat.value.id,
+    })
+    if (id) router.push(`/session/${id}`)
+  } finally {
+    isCreating.value = false
+  }
+}
+
+const startSessionWithoutBeat = async () => {
+  if (isCreating.value) return
+  isCreating.value = true
+  try {
+    const id = await sessionStore.createSession({ name: 'Untitled Session' })
+    if (id) router.push(`/session/${id}`)
+  } finally {
+    isCreating.value = false
+  }
 }
 
 const deleteBeat = async (beatId: string) => {
@@ -97,7 +118,20 @@ onMounted(() => {
 
 <template>
   <div class="p-4 pb-48">
-    <h1 class="text-xl font-bold text-slate-100 mb-4">Beats</h1>
+    <div class="flex justify-between items-start gap-3 mb-4">
+      <div>
+        <h1 class="text-xl font-bold text-slate-100">{{ isNewSessionFlow ? 'Pick a beat' : 'Beats' }}</h1>
+        <p v-if="isNewSessionFlow" class="text-sm text-slate-400 mt-0.5">for your new session</p>
+      </div>
+      <button
+        v-if="isNewSessionFlow && authStore.isAuthenticated"
+        @click="startSessionWithoutBeat"
+        :disabled="isCreating"
+        class="text-sm text-slate-300 border border-slate-600 px-3 py-2 rounded-lg hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-40 flex-shrink-0"
+      >
+        {{ isCreating ? 'Creating…' : 'Write without a beat' }}
+      </button>
+    </div>
 
     <!-- Add beat button -->
     <button

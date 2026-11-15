@@ -66,6 +66,9 @@ export const useSessionStore = defineStore('sessionStore', {
     async loadSession(id: string) {
       this.isLoading = true
       this.clearMessages()
+      // Drop the previous session first: if this load fails, the view must not
+      // keep rendering (or autosaving into) the session that was open before.
+      this.activeSession = null
 
       try {
         const res = await sessionsApi.getSession(id)
