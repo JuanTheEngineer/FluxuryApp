@@ -100,13 +100,27 @@ test('lyrics survive save -> reopen in a fresh browser', async ({ browser }) => 
 
     // Real server save, not just "dirty" or "saved locally"
     await expect(page.locator('[data-testid="save-status"]')).toContainText(/Saved/i, { timeout: 20_000 })
+
+    // Second save: conditional on the version the first save returned (If-Match).
+    // Proves the browser can read S3's ETag through CORS; if it couldn't, this
+    // save would be wrongly refused (412) as a conflict.
+    const secondSave = page.waitForResponse(
+      (r) => r.request().method() === 'PUT' && r.url().includes('/script.json'),
+      { timeout: 20_000 },
+    )
+    await page.keyboard.type(' more')
+    const secondSaveResponse = await secondSave
+    expect(secondSaveResponse.status(), 'second (conditional) save refused').toBe(200)
+    expect(secondSaveResponse.request().headers()['if-match'], 'second save was not conditional').toBeTruthy()
+    await expect(page.locator('[data-testid="save-status"]')).toContainText(/Saved/i, { timeout: 20_000 })
+    await expect(page.locator('[data-testid="conflict-banner"]')).toHaveCount(0)
     expect(failedRequests, `Network failures during save:\n${failedRequests.join('\n')}`).toEqual([])
     expect(pageErrors, `Uncaught errors while writing:\n${pageErrors.join('\n')}`).toEqual([])
 
     // --- Reopen in a brand-new browser context (no local draft) ---
     const reopened = await freshLoggedInPage(browser)
     await reopened.goto(sessionUrl)
-    await expect(reopened.locator('[data-testid="script-editor"] .ql-editor')).toContainText(marker, {
+    await expect(reopened.locator('[data-testid="script-editor"] .ql-editor')).toContainText(`${marker} more`, {
       timeout: 20_000,
     })
     await reopened.context().close()
