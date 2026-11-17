@@ -165,7 +165,7 @@
         :lastSavedAt="lastSavedAt"
         :onRetry="handleRetry"
       />
-      <div v-else class="mt-3 text-center">
+      <div v-else-if="!authStore.isAuthenticated" class="mt-3 text-center">
         <router-link to="/login" class="text-amber-500 text-sm hover:text-amber-400">Sign in to edit</router-link>
       </div>
     </div>

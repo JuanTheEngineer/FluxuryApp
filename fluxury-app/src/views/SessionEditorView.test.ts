@@ -44,13 +44,14 @@ vi.mock('@/services/localDraft', () => ({
     set: vi.fn().mockResolvedValue(undefined), delete: vi.fn(), isAvailable: () => true },
 }))
 
+let mockConflictSessionId: string | null = null
 const mockLoadSession = vi.fn()
 let mockActiveSessionValue: any = null
 vi.mock('@/stores/sessionStore', () => ({
   useSessionStore: () => ({ loadSession: (...a: unknown[]) => mockLoadSession(...a),
     loadScript: async (_id: string, script?: string) =>
       script?.startsWith('data:application/json;base64,') ? JSON.parse(atob(script.split(',')[1])) : null,
-    conflictSessionId: null,
+    get conflictSessionId() { return mockConflictSessionId },
     saveScript: vi.fn().mockResolvedValue('url'), get activeSession() { return mockActiveSessionValue } }),
 }))
 const mockBeatStore = reactive({
@@ -203,6 +204,16 @@ describe('SessionEditorView: session options menu (delete)', () => {
     await nextTick()
 
     expect(w.find('[role="menu"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('during a save conflict, a signed-in writer is not told to sign in', async () => {
+    mockConflictSessionId = 'session-1'
+    const w = await mountSignedIn()
+    expect(w.find('[data-testid="conflict-banner"]').exists()).toBe(true)
+    // RouterLink is stubbed (no slot text), so look for the link itself
+    expect(w.find('[to="/login"]').exists()).toBe(false)
+    mockConflictSessionId = null
     w.unmount()
   })
 
