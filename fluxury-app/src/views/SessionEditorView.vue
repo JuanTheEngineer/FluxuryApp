@@ -93,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed, onUnmounted, watch, nextTick } from 'vue'
+import { onMounted, ref, shallowRef, computed, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, onBeforeRouteLeave } from 'vue-router'
 import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
@@ -121,7 +121,10 @@ const { recordBeatAudible, recordEditorFocused, recordFirstSaveSuccess } = useTi
 
 // Refs
 const editorRef = ref<HTMLElement>()
-const quill = ref<Quill>()
+// shallowRef, NOT ref: a deep reactive Proxy around Quill breaks its internal
+// identity checks, so getSelection() throws "reading 'offset'" and the cursor
+// jumps to 0 on the first edit.
+const quill = shallowRef<Quill>()
 const session = ref<typeof sessionStore.activeSession>(null)
 const currentDelta = ref<any>(null)
 const resumeState = ref<LocalDraft | null>(null)
