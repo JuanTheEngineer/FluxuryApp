@@ -48,6 +48,46 @@
           {{ session?.name }}
           <span v-if="authStore.isAuthenticated" class="text-xs text-slate-500 ml-1">✏️</span>
         </h1>
+
+        <!-- Session options (⋯). Delete lives here, one tap away from the
+             writing area rather than a bare trash icon next to it. -->
+        <div v-if="authStore.isAuthenticated" ref="menuRoot" class="relative ml-auto flex-shrink-0">
+          <button
+            type="button"
+            data-testid="session-menu"
+            aria-label="Session options"
+            aria-haspopup="menu"
+            :aria-expanded="menuOpen"
+            @click="toggleMenu"
+            class="w-10 h-10 rounded-full text-slate-400 hover:text-slate-100 hover:bg-slate-700/60 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor">
+              <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+            </svg>
+          </button>
+          <div
+            v-if="menuOpen"
+            role="menu"
+            aria-label="Session options"
+            @keydown.esc.stop="closeMenu(true)"
+            class="absolute right-0 mt-1 w-48 z-30 rounded-lg border border-slate-700 bg-surface-elevated text-slate-100 shadow-xl py-1"
+          >
+            <button
+              ref="deleteItem"
+              type="button"
+              role="menuitem"
+              data-testid="delete-session"
+              @click="deleteThisSession"
+              class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 focus:bg-red-500/10 focus:outline-none flex items-center gap-2"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+              Delete session
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- No beat indicator -->
@@ -126,12 +166,13 @@
 
 <script setup lang="ts">
 import { onMounted, ref, shallowRef, computed, onUnmounted, watch, nextTick } from 'vue'
-import { useRoute, onBeforeRouteLeave } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useBeatStore } from '@/stores/beatStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useSessionDeletionStore } from '@/stores/sessionDeletionStore'
 import { useAutosave, type SaveStatus as SaveStatusType } from '@/composables/useAutosave'
 import { useSessionLifecycle } from '@/composables/useSessionLifecycle'
 import { useConnectivity } from '@/composables/useConnectivity'
@@ -145,6 +186,8 @@ const sessionStore = useSessionStore()
 const beatStore = useBeatStore()
 const authStore = useAuthStore()
 const route = useRoute()
+const router = useRouter()
+const deletion = useSessionDeletionStore()
 
 // Composables
 const { state: lifecycleState, transition } = useSessionLifecycle()
@@ -385,6 +428,42 @@ onBeforeRouteLeave(async () => {
 })
 
 // --- Lifecycle ---
+// --- Session options menu (⋯) ---
+const menuOpen = ref(false)
+const menuRoot = ref<HTMLElement>()
+const deleteItem = ref<HTMLButtonElement>()
+
+function onPointerDownOutside(e: PointerEvent) {
+  if (!menuRoot.value?.contains(e.target as Node)) closeMenu()
+}
+
+async function toggleMenu() {
+  if (menuOpen.value) return closeMenu()
+  menuOpen.value = true
+  document.addEventListener('pointerdown', onPointerDownOutside)
+  await nextTick()
+  deleteItem.value?.focus() // keyboard users land on the first item
+}
+
+function closeMenu(restoreFocus = false) {
+  if (!menuOpen.value) return
+  menuOpen.value = false
+  document.removeEventListener('pointerdown', onPointerDownOutside)
+  if (restoreFocus) menuRoot.value?.querySelector<HTMLButtonElement>('[data-testid="session-menu"]')?.focus()
+}
+
+/**
+ * Back to the list, where the session disappears and "Deleted … · Undo" shows
+ * for 5 seconds (sessionDeletionStore). Leaving the editor flushes autosave
+ * first (onBeforeRouteLeave), so an Undo restores the latest lyrics.
+ */
+function deleteThisSession() {
+  closeMenu()
+  if (!session.value) return
+  deletion.request({ id: session.value.id, name: session.value.name })
+  router.push('/sessions')
+}
+
 onMounted(async () => {
   await beatStore.fetchBeats()
   await loadSession()
@@ -394,6 +473,7 @@ onMounted(async () => {
 onUnmounted(() => {
   destroyAutosave()
   document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('pointerdown', onPointerDownOutside)
 })
 </script>
 

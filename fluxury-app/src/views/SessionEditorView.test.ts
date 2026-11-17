@@ -21,9 +21,10 @@ vi.mock('howler', () => ({
   }),
 }))
 
+const mockPush = vi.fn()
 const mockRoute = { params: { id: 'session-1' } as Record<string, string> }
 vi.mock('vue-router', () => ({
-  useRoute: () => mockRoute, onBeforeRouteLeave: vi.fn(),
+  useRoute: () => mockRoute, useRouter: () => ({ push: mockPush }), onBeforeRouteLeave: vi.fn(),
   RouterLink: { template: '<a><slot /></a>', props: ['to'] },
 }))
 
@@ -55,6 +56,8 @@ vi.mock('@/stores/sessionStore', () => ({
 vi.mock('@/stores/beatStore', () => ({ useBeatStore: () => ({ fetchBeats: vi.fn().mockResolvedValue([]) }) }))
 
 import SessionEditorView from './SessionEditorView.vue'
+import { useAuthStore } from '@/stores/authStore'
+import { useSessionDeletionStore } from '@/stores/sessionDeletionStore'
 const MockedQuill = vi.mocked(Quill)
 
 // --- Tests ---
@@ -135,5 +138,73 @@ describe('SessionEditorView', () => {
     mockRoute.params = { id: '' }
     const w = await mountAndSettle()
     expect(w.text()).toContain('No Song Selected')
+  })
+})
+
+describe('SessionEditorView: session options menu (delete)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockIsOnline.value = true
+    mockLocalDraftGet.mockResolvedValue(null)
+    mockRoute.params = { id: 'session-1' }
+    mockPush.mockReset()
+    mockLoadSession.mockReset().mockImplementation(async () => {
+      mockActiveSessionValue = { id: 'session-1', name: 'Verse one', script: null, beatUrl: '/beats/t.wav' }
+    })
+  })
+
+  async function mountSignedIn(signedIn = true) {
+    useAuthStore().isAuthenticated = signedIn
+    const w = mount(SessionEditorView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises(); await nextTick(); await flushPromises(); await nextTick()
+    return w
+  }
+
+  it('is closed until the ⋯ button is pressed', async () => {
+    const w = await mountSignedIn()
+    const toggle = w.find('[data-testid="session-menu"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-testid="delete-session"]').exists()).toBe(false)
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(w.find('[role="menu"] [data-testid="delete-session"]').text()).toContain('Delete session')
+    w.unmount()
+  })
+
+  it('Delete session starts an undoable delete and goes back to the list', async () => {
+    const w = await mountSignedIn()
+    await w.find('[data-testid="session-menu"]').trigger('click')
+    await w.find('[data-testid="delete-session"]').trigger('click')
+
+    expect(useSessionDeletionStore().pending).toEqual({ id: 'session-1', name: 'Verse one' })
+    expect(mockPush).toHaveBeenCalledWith('/sessions')
+    w.unmount()
+  })
+
+  it('Escape closes the menu without deleting', async () => {
+    const w = await mountSignedIn()
+    await w.find('[data-testid="session-menu"]').trigger('click')
+    await w.find('[role="menu"]').trigger('keydown', { key: 'Escape' })
+
+    expect(w.find('[role="menu"]').exists()).toBe(false)
+    expect(useSessionDeletionStore().pending).toBeNull()
+    w.unmount()
+  })
+
+  it('a tap outside closes the menu', async () => {
+    const w = await mountSignedIn()
+    await w.find('[data-testid="session-menu"]').trigger('click')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await nextTick()
+
+    expect(w.find('[role="menu"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('is not offered to signed-out viewers', async () => {
+    const w = await mountSignedIn(false)
+    expect(w.find('[data-testid="session-menu"]').exists()).toBe(false)
+    w.unmount()
   })
 })

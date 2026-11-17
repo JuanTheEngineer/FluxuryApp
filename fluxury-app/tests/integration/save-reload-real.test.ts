@@ -81,6 +81,7 @@ vi.mock('howler', () => ({
 }))
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { id: 'session-1' } }),
+  useRouter: () => ({ push: vi.fn() }),
   onBeforeRouteLeave: vi.fn(),
   RouterLink: { template: '<a><slot /></a>', props: ['to'] },
 }))

@@ -110,7 +110,7 @@ vi.mock('howler', () => ({
     volume: vi.fn(() => 0.8), loop: vi.fn(() => true), duration: vi.fn(() => 200), playing: vi.fn(() => false), unload: vi.fn() })),
 }))
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { id: 'song-1' } }), onBeforeRouteLeave: vi.fn(),
+  useRoute: () => ({ params: { id: 'song-1' } }), useRouter: () => ({ push: vi.fn() }), onBeforeRouteLeave: vi.fn(),
   RouterLink: { template: '<a><slot /></a>', props: ['to'] },
 }))
 vi.mock('@/composables/useConnectivity', async () => {
