@@ -27,6 +27,11 @@ export interface LocalDraft {
   beatPlaybackPosition: number // seconds into the beat
   beatVolume: number           // 0–1
   beatLooping: boolean
+  /**
+   * false = holds edits the server has not confirmed; true = matches the last
+   * successful server save. Missing on drafts written before 2026-11-16.
+   */
+  synced?: boolean
 }
 
 export interface LocalDraftService {
