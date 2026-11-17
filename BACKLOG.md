@@ -20,6 +20,7 @@ What already exists:
 - Sessions have an `artworkUrl` field, and `S3Service.uploadArtwork()` exists, but no UI calls it.
 
 - [ ] **Show beat artwork in the player and the session editor**: `BeatPlayer` never renders the beat's image. Also confirm whether the live beats actually have `thumbnailUrl` set.
+- [ ] **Player shows every real beat as "audio"**: it derives the name from the last segment of the beat URL, and in production that's always `.../audio.wav?<signature>`. Pass the beat's real name (and creator) into `BeatPlayer` instead. Same change as the artwork item above. *(found 2026-11-17)*
 - [ ] **Session artwork**: let the user set or change a session's cover at any time, including after creation. Open question: upload a photo, default to the beat's artwork, or both?
 - [ ] **Show session artwork in the session list**
 
@@ -54,7 +55,8 @@ Same feature end to end: the button, the API call, and cleaning up storage.
 
 Same code path: what happens between opening a session and the editor being ready.
 
-- [ ] **Flash of empty UI on open**: a session briefly shows no lyrics and no beat before the real content arrives. Needs a proper loading treatment so the user never sees "empty" before the data comes back. Design is still open. *(reported 2026-11-14)*
+- [x] **Flash of empty UI on open** (2026-11-17): it showed an empty editor + "No beat selected" while the whole beat list downloaded, then "Loading session...", then the session. Now an editor-shaped skeleton from the first frame, session and beats load in parallel, the player area has a same-size placeholder until the beat is known, and "No beat selected" only shows when true. The player keeps its full size while audio loads. (`79951dd`, `699d5aa`) *(committed, needs `./deploy.sh frontend`)*
+- [x] **"Sign in to edit" shown to signed-in writers during a save conflict** (`ecf4c80`; regression from `d1f4db3`)
 - [x] **Cursor jumps to the start after the first keystroke, and the Quill `offset` error spam**: one root cause. Quill was stored in `ref()`, a deep Vue Proxy that breaks Quill's selection code, so `getSelection()` threw and the cursor reset to 0 (`test` became `est…t`). Fixed with `shallowRef`; the beta test now also fails on any uncaught page error. Found by the beta test on 2026-11-16. (`6b79595`, verified live 2026-11-16)
 - [ ] **Investigate a `cognito-idp` 400 on page load**: it appears in the console on open. Find out whether it's a harmless token-refresh miss or a real auth bug.
 
