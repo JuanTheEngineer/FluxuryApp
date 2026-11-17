@@ -38,6 +38,8 @@ test('lyrics survive save -> reopen in a fresh browser', async ({ browser }) => 
   // --- Write ---
   const page = await freshLoggedInPage(browser)
   page.on('requestfailed', (r) => failedRequests.push(`${r.method()} ${r.url()} ${r.failure()?.errorText}`))
+  const pageErrors: string[] = []
+  page.on('pageerror', (e) => pageErrors.push(e.message))
 
   await page.getByRole('link', { name: /New Session/ }).click()
   await expect(page.getByRole('heading', { name: 'Pick a beat' })).toBeVisible()
@@ -49,10 +51,13 @@ test('lyrics survive save -> reopen in a fresh browser', async ({ browser }) => 
   await expect(editor).toBeVisible({ timeout: 15_000 })
   await editor.click()
   await page.keyboard.type(marker)
+  // Separates "keystroke dropped by the editor" from "save/load lost it"
+  await expect(editor, 'editor did not receive every keystroke').toContainText(marker)
 
   // Real server save, not just "dirty" or "saved locally"
   await expect(page.locator('[data-testid="save-status"]')).toContainText(/Saved/i, { timeout: 20_000 })
   expect(failedRequests, `Network failures during save:\n${failedRequests.join('\n')}`).toEqual([])
+  expect(pageErrors, `Uncaught errors while writing:\n${pageErrors.join('\n')}`).toEqual([])
   await page.context().close()
 
   // --- Reopen in a brand-new browser context (no local draft) ---

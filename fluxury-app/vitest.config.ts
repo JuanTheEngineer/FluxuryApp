@@ -11,6 +11,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
+    // Unit tests always run against the mock backend, whatever .env.local says
+    // (a dev .env.local pointing at beta made all 155 tests hit the network).
+    env: { VITE_DEMO_MODE: 'true' },
     include: ['src/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     coverage: { provider: 'v8', reporter: ['text', 'html'] },
   },
