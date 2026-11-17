@@ -27,6 +27,7 @@ import {
   getCurrentUser as authGetCurrentUser,
 } from '@/api/auth-interceptor'
 import { S3Service } from '@/services/s3Service'
+import type { ExpectedVersion } from '@/services/scriptConflict'
 import axios from 'axios'
 
 const sessionsBasePath =
@@ -133,8 +134,8 @@ export const authApi = {
 
 // --- Storage API (delegates to existing S3Service static methods) ---
 export const storageApi = {
-  uploadSessionScript: (sessionId: string, scriptData: unknown) =>
-    S3Service.uploadSessionScript(sessionId, scriptData),
+  uploadSessionScript: (sessionId: string, scriptData: unknown, expectedVersion?: ExpectedVersion) =>
+    S3Service.uploadSessionScript(sessionId, scriptData, expectedVersion),
   downloadSessionScript: (sessionId: string) =>
     S3Service.downloadSessionScript(sessionId),
   uploadArtwork: (sessionId: string, file: File) =>

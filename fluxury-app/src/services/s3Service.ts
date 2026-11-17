@@ -1,5 +1,14 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { fetchAuthSession } from 'aws-amplify/auth'
+import { ScriptConflictError, type ExpectedVersion } from './scriptConflict'
+import type { StoredScript } from './api/contracts'
+
+function isConditionalWriteRefused(err: unknown): boolean {
+  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } }
+  const status = e?.$metadata?.httpStatusCode
+  return status === 412 || status === 409 ||
+    e?.name === 'PreconditionFailed' || e?.name === 'ConditionalRequestConflict'
+}
 
 const REGION = import.meta.env.VITE_AWS_REGION || 'us-east-1'
 const BUCKET_NAME = import.meta.env.VITE_S3_BUCKET_NAME || ''
@@ -28,21 +37,36 @@ async function getS3Client(): Promise<S3Client> {
 }
 
 export const S3Service = {
-  async uploadSessionScript(sessionId: string, scriptData: unknown): Promise<string> {
+  /**
+   * Conditional write (S3 conditional writes): `expectedVersion` string sends
+   * If-Match, null sends If-None-Match: *. A refused write (412, or 409 when
+   * two conditional writes race) becomes ScriptConflictError.
+   */
+  async uploadSessionScript(
+    sessionId: string,
+    scriptData: unknown,
+    expectedVersion?: ExpectedVersion,
+  ): Promise<{ url: string; version: string | null }> {
     const client = await getS3Client()
     const key = `sessions/${sessionId}/script.json`
 
-    await client.send(new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: key,
-      Body: JSON.stringify(scriptData),
-      ContentType: 'application/json',
-    }))
-
-    return `s3://${BUCKET_NAME}/${key}`
+    try {
+      const res = await client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+        Body: JSON.stringify(scriptData),
+        ContentType: 'application/json',
+        ...(typeof expectedVersion === 'string' ? { IfMatch: expectedVersion } : {}),
+        ...(expectedVersion === null ? { IfNoneMatch: '*' } : {}),
+      }))
+      return { url: `s3://${BUCKET_NAME}/${key}`, version: res.ETag ?? null }
+    } catch (err) {
+      if (isConditionalWriteRefused(err)) throw new ScriptConflictError(sessionId)
+      throw err
+    }
   },
 
-  async downloadSessionScript(sessionId: string): Promise<unknown> {
+  async downloadSessionScript(sessionId: string): Promise<StoredScript> {
     const client = await getS3Client()
     const key = `sessions/${sessionId}/script.json`
 
@@ -54,7 +78,7 @@ export const S3Service = {
     const body = await response.Body?.transformToString()
     if (!body) throw new Error('Empty script response from S3')
 
-    return JSON.parse(body)
+    return { content: JSON.parse(body), version: response.ETag ?? null }
   },
 
   async uploadArtwork(sessionId: string, file: File): Promise<string> {

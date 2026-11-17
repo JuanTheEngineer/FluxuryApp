@@ -9,6 +9,7 @@
  *
  * No implementations live here — this file is types only.
  */
+import type { ExpectedVersion } from '../scriptConflict'
 
 import type {
   SessionSummary,
@@ -48,9 +49,25 @@ export interface AuthApiContract {
   logout(): Promise<{ success: boolean }>
 }
 
+/** A session script as stored, plus the version it was read at. */
+export interface StoredScript {
+  content: unknown
+  /** Opaque version (S3 ETag). null when the backend can't version. */
+  version: string | null
+}
+
 export interface StorageApiContract {
-  uploadSessionScript(sessionId: string, scriptData: unknown): Promise<string>
-  downloadSessionScript(sessionId: string): Promise<unknown>
+  /**
+   * Writes the script. With `expectedVersion` (see ExpectedVersion), the write
+   * only succeeds if the stored script is still at that version, otherwise it
+   * rejects with ScriptConflictError and nothing is written.
+   */
+  uploadSessionScript(
+    sessionId: string,
+    scriptData: unknown,
+    expectedVersion?: ExpectedVersion,
+  ): Promise<{ url: string; version: string | null }>
+  downloadSessionScript(sessionId: string): Promise<StoredScript>
   uploadArtwork(sessionId: string, file: File): Promise<string>
   uploadBeat(beatId: string, file: File): Promise<string>
 }

@@ -212,7 +212,7 @@ async function fetchServerScript(script: string | undefined, id: string): Promis
       return null
     }
   }
-  if (script?.startsWith('s3://')) return storageApi.downloadSessionScript(id)
+  if (script?.startsWith('s3://')) return (await storageApi.downloadSessionScript(id)).content
   return null
 }
 

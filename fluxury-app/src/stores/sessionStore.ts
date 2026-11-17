@@ -186,7 +186,7 @@ export const useSessionStore = defineStore('sessionStore', {
     // so swallowing the error here made failed saves look successful.
     async saveScript(id: string, delta: unknown): Promise<string> {
       try {
-        const scriptUrl = await storageApi.uploadSessionScript(
+        const { url: scriptUrl } = await storageApi.uploadSessionScript(
           id,
           encodeServerScript(delta as QuillDelta, Date.now()),
         )

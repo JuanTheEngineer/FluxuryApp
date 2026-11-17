@@ -1,5 +1,6 @@
 // Mock API service for local development demo
 
+import { ScriptConflictError, type ExpectedVersion } from './scriptConflict'
 import {
   mockSessions,
   mockBeats,
@@ -178,6 +179,11 @@ export class MockStorage {
 // reset.ts should call it.
 let _storage = new MockStorage()
 
+// Versions mirror S3 ETags so the mock honours the same conditional-write
+// contract as the real service (StorageApiContract.uploadSessionScript).
+const _scriptVersions = new Map<string, number>()
+const _versionTag = (n: number) => `"mock-v${n}"`
+
 /**
  * Replace the module-level mock storage with a fresh `MockStorage` instance.
  * After this returns, every subsequent call through `mockSessionsApi`,
@@ -187,6 +193,7 @@ let _storage = new MockStorage()
  */
 export function __resetMockStorage(): void {
   _storage = new MockStorage()
+  _scriptVersions.clear()
 }
 
 // Mock API clients that match the real API interface.
@@ -207,10 +214,17 @@ export const mockBeatsApi = {
 }
 
 // Mock S3 Service
+
 export const mockS3Service = {
-  async uploadSessionScript(sessionId: string, scriptData: any) {
+  async uploadSessionScript(sessionId: string, scriptData: any, expectedVersion?: ExpectedVersion) {
     await simulateDelay(1000) // Simulate upload time
     console.log('📁 Mock S3: Uploading script for session', sessionId)
+
+    const current = _scriptVersions.get(sessionId)
+    const currentTag = current === undefined ? null : _versionTag(current)
+    if (expectedVersion !== undefined && expectedVersion !== currentTag) {
+      throw new ScriptConflictError(sessionId)
+    }
 
     // Simulate successful upload
     const scriptUrl = `data:application/json;base64,${btoa(JSON.stringify(scriptData))}`
@@ -220,7 +234,9 @@ export const mockS3Service = {
       script: JSON.stringify(scriptData)
     })
 
-    return scriptUrl
+    const next = (current ?? 0) + 1
+    _scriptVersions.set(sessionId, next)
+    return { url: scriptUrl, version: _versionTag(next) }
   },
 
   async downloadSessionScript(sessionId: string) {
@@ -229,9 +245,11 @@ export const mockS3Service = {
 
     // Get from mock storage
     const session = await _storage.getSession(sessionId)
-    return typeof session.data.script === 'string'
+    const content = typeof session.data.script === 'string'
       ? JSON.parse(session.data.script)
       : session.data.script
+    const current = _scriptVersions.get(sessionId)
+    return { content, version: current === undefined ? null : _versionTag(current) }
   },
 
   async uploadArtwork(sessionId: string, file: File) {
