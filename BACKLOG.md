@@ -7,7 +7,11 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ## P0 — Now
 
-_Nothing blocking. New Session fix shipped (`4d12835`)._
+Silent data loss for anyone who uses more than one device (e.g. phone + laptop).
+
+- [ ] **Stale local draft overwrites newer work from another device (data loss)** *(found 2026-11-16)*: on open, `SessionEditorView` uses the local draft if `draft.editTimestamp > serverTimestamp`, but the server file never contains an `editTimestamp` (`saveScript` uploads the raw delta), so `serverTimestamp` is always 0. Local drafts are also never cleared after a successful save. Result: any device that ever edited a session shows ITS OWN old draft, and the next keystroke autosaves it over newer work from another device.
+  - **Step 1 (fix):** save `{ delta, editTimestamp }`; mark the local draft synced after a successful server save; on open, use the draft only if it has unsynced edits. Add a test: save on device A, save newer on device B, reopen on A → B's version.
+  - **Step 2 (conflict detection):** save with S3 conditional writes (`If-Match` on the ETag loaded at open, already exposed via CORS). On `412`, show "This session changed on another device", with Keep mine / Keep theirs / Keep both. No client clocks involved.
 
 ---
 
