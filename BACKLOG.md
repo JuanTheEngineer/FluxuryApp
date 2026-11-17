@@ -29,7 +29,7 @@ What already exists:
 
 These stop the save bug from coming back without anyone noticing.
 
-- [x] **Conflict detection between open copies** (2026-11-16): saves are conditional on the script version each copy loaded (S3 `If-Match` / `If-None-Match`). A refused save pauses saving and offers **Keep my version** or **Use the latest version** (yours is kept as a "(my version)" session). (`9135b19`, `d1f4db3`, beta test `334f5a1`) *(committed, needs `./deploy.sh frontend`)*
+- [x] **Conflict detection between open copies** (2026-11-16): saves are conditional on the script version each copy loaded (S3 `If-Match` / `If-None-Match`). A refused save pauses saving and offers **Keep my version** or **Use the latest version** (yours is kept as a "(my version)" session). (`9135b19`, `d1f4db3`, beta test `334f5a1`). Deployed and verified live 2026-11-17.
 - [x] **CDK assertion test**: bucket CORS allows `GET` + `PUT` from every app origin (`fluxury-infra/test/beta-stack.cors.test.ts`). Run with `cd fluxury-infra && npm test`.
 - [x] **Live smoke check `scripts/verify-deployment.sh`**: preflights S3 `PUT`/`GET` from every app origin, checks API CORS and that the frontend loads. Read-only, no login. Runs automatically at the end of `./deploy.sh`.
 - [x] **Beta test (Playwright) against the deployed beta**: `tests/beta/save-reload.spec.ts`, run with `npm run test:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. Test account: Cognito user `beta` (created 2026-11-16). Cleans up after itself: deletes its own session (even on failure) and sweeps leftover "Untitled Session"s in the test account. Add `FLUXURY_BETA_LOCAL=1` to test local code against the beta backend before deploying.
