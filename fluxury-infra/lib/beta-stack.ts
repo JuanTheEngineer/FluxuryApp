@@ -121,17 +121,26 @@ export class BetaStack extends Stack {
 
     const filesBucket = new Bucket(this, 'FluxuryBetaFiles', {
       bucketName: `fluxury-beta-files-${this.account}-${this.region}`,
-      versioned: false, // Cost optimization for beta
+      // Versioned so an overwrite (e.g. autosave writing an empty document) or a
+      // delete can be undone by restoring the previous version of script.json.
+      versioned: true,
       accessControl: BucketAccessControl.PRIVATE,
       removalPolicy: RemovalPolicy.DESTROY, // For beta only
       autoDeleteObjects: true, // For beta only
-      ...(bucketExpirationDays ? {
-        lifecycleRules: [{
+      lifecycleRules: [
+        {
+          // Autosave writes a new version every few seconds while typing;
+          // keep 30 days of history, then drop old versions to bound storage.
+          id: 'expire-old-versions',
+          enabled: true,
+          noncurrentVersionExpiration: Duration.days(30),
+        },
+        ...(bucketExpirationDays ? [{
           id: 'beta-cleanup',
           enabled: true,
           expiration: Duration.days(bucketExpirationDays),
-        }],
-      } : {}),
+        }] : []),
+      ],
       // Browser uploads session scripts directly (PutObject via Cognito Identity
       // Pool creds), so PUT must be allowed for every origin the app is served from.
       // Keep in sync with the API Gateway allowOrigins below.
