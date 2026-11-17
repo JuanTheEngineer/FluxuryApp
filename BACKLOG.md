@@ -33,7 +33,14 @@ These stop the save bug from coming back without anyone noticing.
 - [x] **Live smoke check `scripts/verify-deployment.sh`**: preflights S3 `PUT`/`GET` from every app origin, checks API CORS and that the frontend loads. Read-only, no login. Runs automatically at the end of `./deploy.sh`.
 - [x] **Beta test (Playwright) against the deployed beta**: `tests/beta/save-reload.spec.ts`, run with `npm run test:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. Test account: Cognito user `beta` (created 2026-11-16). Cleans up after itself: deletes its own session (even on failure) and sweeps leftover "Untitled Session"s in the test account. Add `FLUXURY_BETA_LOCAL=1` to test local code against the beta backend before deploying.
 - [ ] **Data protection**: S3 versioning plus DynamoDB point-in-time recovery
-- [ ] **Deleting a session leaves its lyrics file in S3**: the `sessions` Lambda deletes only the DynamoDB item, so `sessions/<id>/script.json` is orphaned. Delete the S3 object too, or add a lifecycle cleanup. Found while adding test cleanup on 2026-11-16.
+
+## P1 — Batch F: Delete a session
+
+Same feature end to end: the button, the API call, and cleaning up storage.
+
+- [ ] **Delete a session from the UI** *(requested 2026-11-16)*: there's no way to delete a session today. `sessionStore.deleteSession()` and the API `DELETE /sessions/{id}` already exist; only the UI is missing. Reuse the beat browser's inline "Delete? Yes / No" confirm so it matches the existing pattern and prevents accidental taps. Decide where it lives: the session card, the editor, or both.
+- [ ] **Deleting a session leaves its lyrics file in S3**: the `sessions` Lambda deletes only the DynamoDB item, so `sessions/<id>/script.json` is orphaned. Delete the S3 object in the Lambda as part of the same delete. Found while adding test cleanup on 2026-11-16.
+- [ ] **Undo or soft delete?** Lyrics are the one thing users can't recreate. Consider an "Undo" toast for a few seconds before the delete commits, rather than a hard delete on confirm.
 
 ## P1 — Batch B: Session open experience (`SessionEditorView.vue` load/mount)
 
