@@ -31,8 +31,9 @@ These stop the save bug from coming back without anyone noticing.
 
 - [x] **CDK assertion test**: bucket CORS allows `GET` + `PUT` from every app origin (`fluxury-infra/test/beta-stack.cors.test.ts`). Run with `cd fluxury-infra && npm test`.
 - [x] **Live smoke check `scripts/verify-deployment.sh`**: preflights S3 `PUT`/`GET` from every app origin, checks API CORS and that the frontend loads. Read-only, no login. Runs automatically at the end of `./deploy.sh`.
-- [x] **Beta test (Playwright) against the deployed beta**: `tests/beta/save-reload.spec.ts`, run with `npm run test:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. Test account: Cognito user `beta` (created 2026-11-16). Each run leaves one "Untitled Session" in that account. Add `FLUXURY_BETA_LOCAL=1` to test local code against the beta backend before deploying.
+- [x] **Beta test (Playwright) against the deployed beta**: `tests/beta/save-reload.spec.ts`, run with `npm run test:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. Test account: Cognito user `beta` (created 2026-11-16). Cleans up after itself: deletes its own session (even on failure) and sweeps leftover "Untitled Session"s in the test account. Add `FLUXURY_BETA_LOCAL=1` to test local code against the beta backend before deploying.
 - [ ] **Data protection**: S3 versioning plus DynamoDB point-in-time recovery
+- [ ] **Deleting a session leaves its lyrics file in S3**: the `sessions` Lambda deletes only the DynamoDB item, so `sessions/<id>/script.json` is orphaned. Delete the S3 object too, or add a lifecycle cleanup. Found while adding test cleanup on 2026-11-16.
 
 ## P1 — Batch B: Session open experience (`SessionEditorView.vue` load/mount)
 
