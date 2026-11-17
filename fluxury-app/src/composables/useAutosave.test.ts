@@ -383,8 +383,7 @@ describe('useAutosave', () => {
 
   describe('non-network error → error', () => {
     it('sets error status on non-network server error', async () => {
-      const serverError = new Error('Internal Server Error')
-      ;(serverError as Record<string, unknown>).response = { status: 500 }
+      const serverError = Object.assign(new Error('Internal Server Error'), { response: { status: 500 } })
       saveFn.mockRejectedValue(serverError)
 
       const { delta, saveStatus, destroy } = createAutosave()
@@ -597,8 +596,7 @@ describe('useAutosave', () => {
     })
 
     it('error → saving on retry via flush()', async () => {
-      const serverError = new Error('Server Error')
-      ;(serverError as Record<string, unknown>).response = { status: 500 }
+      const serverError = Object.assign(new Error('Server Error'), { response: { status: 500 } })
       saveFn.mockRejectedValueOnce(serverError)
       saveFn.mockResolvedValueOnce('v2')
 
@@ -620,8 +618,7 @@ describe('useAutosave', () => {
     })
 
     it('a new edit after an error retries the save after the debounce', async () => {
-      const serverError = new Error('Server Error')
-      ;(serverError as Record<string, unknown>).response = { status: 500 }
+      const serverError = Object.assign(new Error('Server Error'), { response: { status: 500 } })
       saveFn.mockRejectedValueOnce(serverError)
       saveFn.mockResolvedValueOnce('v2')
 
