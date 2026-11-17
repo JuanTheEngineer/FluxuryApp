@@ -29,7 +29,7 @@ What already exists:
 
 These stop the save bug from coming back without anyone noticing.
 
-- [ ] **A copy left open with stale content can still save over newer work** (was P0 step 2): e.g. a laptop tab left open while you write on your phone, then you type on the laptop. Fix: save with S3 conditional writes (`If-Match` on the ETag loaded at open, already exposed via CORS). On `412`, show "This session changed somewhere else", with Keep mine / Keep theirs / Keep both. No client clocks. Extend `tests/integration/multi-copy-resume.test.ts`.
+- [x] **Conflict detection between open copies** (2026-11-16): saves are conditional on the script version each copy loaded (S3 `If-Match` / `If-None-Match`). A refused save pauses saving and offers **Keep my version** or **Use the latest version** (yours is kept as a "(my version)" session). (`9135b19`, `d1f4db3`, beta test `334f5a1`) *(committed, needs `./deploy.sh frontend`)*
 - [x] **CDK assertion test**: bucket CORS allows `GET` + `PUT` from every app origin (`fluxury-infra/test/beta-stack.cors.test.ts`). Run with `cd fluxury-infra && npm test`.
 - [x] **Live smoke check `scripts/verify-deployment.sh`**: preflights S3 `PUT`/`GET` from every app origin, checks API CORS and that the frontend loads. Read-only, no login. Runs automatically at the end of `./deploy.sh`.
 - [x] **Beta test (Playwright) against the deployed beta**: `tests/beta/save-reload.spec.ts`, run with `npm run test:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. Test account: Cognito user `beta` (created 2026-11-16). Cleans up after itself: deletes its own session (even on failure) and sweeps leftover "Untitled Session"s in the test account. Add `FLUXURY_BETA_LOCAL=1` to test local code against the beta backend before deploying.
@@ -43,6 +43,7 @@ Same feature end to end: the button, the API call, and cleaning up storage.
 
 - [ ] **Delete a session from the UI** *(requested 2026-11-16)*: there's no way to delete a session today. `sessionStore.deleteSession()` and the API `DELETE /sessions/{id}` already exist; only the UI is missing. Reuse the beat browser's inline "Delete? Yes / No" confirm so it matches the existing pattern and prevents accidental taps. Decide where it lives: the session card, the editor, or both.
 - [ ] **Deleting a session leaves its lyrics file in S3**: the `sessions` Lambda deletes only the DynamoDB item, so `sessions/<id>/script.json` is orphaned. Delete the S3 object in the Lambda as part of the same delete. Found while adding test cleanup on 2026-11-16.
+- [ ] **Conflict copies are separate sessions**: "Use the latest version" saves your text as a new "(my version)" session. Fine for now; a real version-history view (S3 versions are already kept 30 days) would be nicer.
 - [ ] **Undo or soft delete?** Lyrics are the one thing users can't recreate. Consider an "Undo" toast for a few seconds before the delete commits, rather than a hard delete on confirm.
 
 ## P1 — Batch B: Session open experience (`SessionEditorView.vue` load/mount)
@@ -85,6 +86,8 @@ Stop testing on the only environment, which users also use.
 ---
 
 ## Done
+
+- [x] **Autosave was stuck after any save error**: Retry did nothing and later edits never saved. Saves now retry from `error`. (`611f051`)
 
 - [x] **Stale local draft overrode newer work from other tabs, windows or devices** (P0, 2026-11-16): the server copy had no timestamp, so any old draft won. Saves now store `{ delta, editTimestamp }`, drafts are marked synced after a matching save, and `services/resume.ts` decides (unsynced edits newer than the server win, nothing else). Legacy drafts count as synced. (`0f5ba3a`, `1fdd1a3`)
 - [x] **Local drafts were never saved to IndexedDB**: `DataCloneError` on the Vue proxy, only logged, so the 500ms local safety net never worked in a real browser. (`09b9442`)
