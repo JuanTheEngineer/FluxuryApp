@@ -6,31 +6,48 @@
  * sessions API, and IndexedDB (one per "device"; "tabs" in one browser share
  * one).
  *
- * Regression for: a device that had ever edited a session showed ITS OWN old
- * draft on reopen, and the next keystroke saved it over newer work.
+ * Regressions for: a device that had ever edited a session showed ITS OWN old
+ * draft on reopen, and the next keystroke saved it over newer work; and a copy
+ * left open with stale content saving over newer work (conflict detection).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 vi.stubEnv('VITE_S3_BUCKET_NAME', 'test-bucket')
 
-// --- Fake S3 ---
-const bucket = new Map<string, string>()
+// --- Fake S3 with ETags and conditional writes (If-Match / If-None-Match),
+// refusing with 412 PreconditionFailed like real S3 ---
+const bucket = new Map<string, { body: string; etag: string }>()
+let etagCounter = 0
 let s3Offline = false
 vi.mock('@aws-sdk/client-s3', () => {
   class PutObjectCommand { constructor(public input: any) {} }
   class GetObjectCommand { constructor(public input: any) {} }
+  const preconditionFailed = () =>
+    Object.assign(new Error('PreconditionFailed'), { name: 'PreconditionFailed', $metadata: { httpStatusCode: 412 } })
   class S3Client {
     async send(cmd: any) {
       if (s3Offline) throw new TypeError('Failed to fetch')
       const key = `${cmd.input.Bucket}/${cmd.input.Key}`
-      if (cmd instanceof PutObjectCommand) { bucket.set(key, String(cmd.input.Body)); return {} }
-      const body = bucket.get(key)
-      return { Body: body === undefined ? undefined : { transformToString: async () => body } }
+      const current = bucket.get(key)
+      if (cmd instanceof PutObjectCommand) {
+        const { IfMatch, IfNoneMatch } = cmd.input
+        if (IfMatch !== undefined && current?.etag !== IfMatch) throw preconditionFailed()
+        if (IfNoneMatch === '*' && current) throw preconditionFailed()
+        const etag = `"e${++etagCounter}"`
+        bucket.set(key, { body: String(cmd.input.Body), etag })
+        return { ETag: etag }
+      }
+      if (!current) throw Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } })
+      return { ETag: current.etag, Body: { transformToString: async () => current.body } }
     }
   }
   return { S3Client, PutObjectCommand, GetObjectCommand }
 })
+const storedText = (id: string) => {
+  const obj = bucket.get(`test-bucket/sessions/${id}/script.json`)
+  return obj ? text(JSON.parse(obj.body).delta) : undefined
+}
 vi.mock('aws-amplify/auth', () => ({
   fetchAuthSession: async () => ({ credentials: { accessKeyId: 'a', secretAccessKey: 'b', sessionToken: 'c' } }),
 }))
@@ -47,6 +64,11 @@ vi.mock('@/services/api', async () => {
         return { data: sessionsDb.get(id) }
       },
       listSessions: async () => ({ data: { sessions: [...sessionsDb.values()] } }),
+      createSession: async (payload: any) => {
+        const session = { id: `copy-${sessionsDb.size}`, script: '', artworkUrl: '', ...payload }
+        sessionsDb.set(session.id, session)
+        return { data: session }
+      },
     },
     storageApi: {
       uploadSessionScript: S3Service.uploadSessionScript,
@@ -140,6 +162,12 @@ async function open(store: Store) {
       editor.type(lyrics)
       await settle(2500)
     },
+    inConflict: () => wrapper.find('[data-testid="conflict-banner"]').exists(),
+    async click(testId: string) {
+      await wrapper.find(`[data-testid="${testId}"]`).trigger('click')
+      await settle(2500)
+    },
+    note: () => wrapper.find('[data-testid="conflict-note"]').text(),
     close: () => wrapper.unmount(),
   }
 }
@@ -148,7 +176,7 @@ describe('Integration: one session open in many places', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
     vi.setSystemTime(new Date('2026-11-16T12:00:00Z'))
-    bucket.clear(); sessionsDb.clear(); editors = []; s3Offline = false
+    bucket.clear(); etagCounter = 0; sessionsDb.clear(); editors = []; s3Offline = false
     sessionsDb.set('song-1', { id: 'song-1', name: 'Song', artworkUrl: '', script: '' })
   })
   afterEach(() => { vi.useRealTimers() })
@@ -222,5 +250,71 @@ describe('Integration: one session open in many places', () => {
     const aAgain = await open(deviceA)
     expect(aAgain.shownText()).toBe('newer from B')
     aAgain.close()
+  })
+
+  describe('copies open at the same time (conflict detection)', () => {
+    /** Laptop and phone both have the session open; the phone saves first. */
+    async function laptopFallsBehind() {
+      const laptop = await open(new IDBFactory())
+      await laptop.write('first draft')
+      const phone = await open(new IDBFactory())
+      await phone.write('phone bars')
+      await laptop.write('laptop bars')
+      return { laptop, phone }
+    }
+
+    it('refuses the stale save instead of overwriting, and asks the user', async () => {
+      const { laptop, phone } = await laptopFallsBehind()
+      expect(storedText('song-1')).toBe('phone bars')
+      expect(laptop.inConflict()).toBe(true)
+      expect(phone.inConflict()).toBe(false)
+      laptop.close(); phone.close()
+    })
+
+    it('keeps saving paused while in conflict', async () => {
+      const { laptop, phone } = await laptopFallsBehind()
+      await laptop.write('laptop bars, more')
+      expect(storedText('song-1')).toBe('phone bars')
+      laptop.close(); phone.close()
+    })
+
+    it('"Keep my version" saves this copy over the newer one', async () => {
+      const { laptop, phone } = await laptopFallsBehind()
+      await laptop.click('conflict-keep-mine')
+      expect(laptop.inConflict()).toBe(false)
+      expect(storedText('song-1')).toBe('laptop bars')
+      laptop.close(); phone.close()
+    })
+
+    it('"Use the latest version" loads it and keeps this copy as a new session', async () => {
+      const { laptop, phone } = await laptopFallsBehind()
+      await laptop.click('conflict-use-latest')
+      expect(laptop.inConflict()).toBe(false)
+      expect(laptop.shownText()).toBe('phone bars')
+      expect(storedText('song-1')).toBe('phone bars')
+      expect(storedText('copy-1')).toBe('laptop bars')
+      expect(sessionsDb.get('copy-1').name).toBe('Song (my version)')
+      expect(laptop.note()).toContain('Song (my version)')
+      laptop.close(); phone.close()
+    })
+
+    it('after resolving, the other copy is now the one behind', async () => {
+      const { laptop, phone } = await laptopFallsBehind()
+      await laptop.click('conflict-keep-mine')
+      await phone.write('phone again')
+      expect(phone.inConflict()).toBe(true)
+      expect(storedText('song-1')).toBe('laptop bars')
+      laptop.close(); phone.close()
+    })
+
+    it('two copies of a brand-new session: the second first-save is refused', async () => {
+      const a = await open(new IDBFactory())
+      const b = await open(new IDBFactory())
+      await a.write('from A')
+      await b.write('from B')
+      expect(storedText('song-1')).toBe('from A')
+      expect(b.inConflict()).toBe(true)
+      a.close(); b.close()
+    })
   })
 })

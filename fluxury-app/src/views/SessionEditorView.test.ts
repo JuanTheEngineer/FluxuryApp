@@ -47,6 +47,9 @@ const mockLoadSession = vi.fn()
 let mockActiveSessionValue: any = null
 vi.mock('@/stores/sessionStore', () => ({
   useSessionStore: () => ({ loadSession: (...a: unknown[]) => mockLoadSession(...a),
+    loadScript: async (_id: string, script?: string) =>
+      script?.startsWith('data:application/json;base64,') ? JSON.parse(atob(script.split(',')[1])) : null,
+    conflictSessionId: null,
     saveScript: vi.fn().mockResolvedValue('url'), get activeSession() { return mockActiveSessionValue } }),
 }))
 vi.mock('@/stores/beatStore', () => ({ useBeatStore: () => ({ fetchBeats: vi.fn().mockResolvedValue([]) }) }))

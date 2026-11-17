@@ -59,6 +59,38 @@
         </router-link>
       </div>
 
+      <!-- Conflict: another copy saved newer work; nothing is saved until the user chooses -->
+      <div
+        v-if="inConflict"
+        role="alert"
+        data-testid="conflict-banner"
+        class="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-slate-100 p-3"
+      >
+        <p class="text-sm font-medium">This session was changed in another tab or on another device.</p>
+        <p class="text-xs text-slate-400 mt-0.5">Saving is paused so nothing gets overwritten.</p>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button
+            data-testid="conflict-keep-mine"
+            :disabled="resolvingConflict"
+            @click="keepMyVersion"
+            class="bg-amber-500 text-black px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors disabled:opacity-40"
+          >
+            Keep my version
+          </button>
+          <button
+            data-testid="conflict-use-latest"
+            :disabled="resolvingConflict"
+            @click="useLatestVersion"
+            class="border border-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-sm hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-40"
+          >
+            Use the latest version
+          </button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2">Using the latest keeps yours as a copy in My Sessions.</p>
+        <p v-if="conflictError" class="text-xs text-red-400 mt-2">{{ conflictError }}</p>
+      </div>
+      <p v-else-if="conflictNote" data-testid="conflict-note" class="mt-2 text-xs text-slate-400">{{ conflictNote }}</p>
+
       <!-- Quill Editor — click anywhere to focus -->
       <div
         @click="focusEditor"
@@ -70,7 +102,7 @@
 
       <!-- Save Status -->
       <SaveStatus
-        v-if="authStore.isAuthenticated"
+        v-if="authStore.isAuthenticated && !inConflict"
         :status="saveStatus"
         :lastSavedAt="lastSavedAt"
         :onRetry="handleRetry"
@@ -98,14 +130,13 @@ import { useRoute, onBeforeRouteLeave } from 'vue-router'
 import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
 import { useSessionStore } from '@/stores/sessionStore'
-import { storageApi } from '@/services/api'
 import { useBeatStore } from '@/stores/beatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useAutosave, type SaveStatus as SaveStatusType } from '@/composables/useAutosave'
 import { useSessionLifecycle } from '@/composables/useSessionLifecycle'
 import { useConnectivity } from '@/composables/useConnectivity'
 import { useTimingMetrics } from '@/composables/useTimingMetrics'
-import { localDraftService, type LocalDraft } from '@/services/localDraft'
+import { localDraftService, type LocalDraft, type QuillDelta } from '@/services/localDraft'
 import { decodeServerScript, resolveResume } from '@/services/resume'
 import BeatPlayer from '@/components/BeatPlayer.vue'
 import SaveStatus from '@/components/SaveStatus.vue'
@@ -199,23 +230,6 @@ function focusEditor() {
 
 // --- Session loading ---
 
-/**
- * Raw contents of the session's script, or null for a session with no lyrics
- * yet. Demo mode inlines it as a data URL; real mode stores an s3:// pointer.
- * A malformed data URL yields null; an S3 download failure throws.
- */
-async function fetchServerScript(script: string | undefined, id: string): Promise<unknown> {
-  if (script?.startsWith('data:application/json;base64,')) {
-    try {
-      return JSON.parse(atob(script.split(',')[1]))
-    } catch {
-      return null
-    }
-  }
-  if (script?.startsWith('s3://')) return (await storageApi.downloadSessionScript(id)).content
-  return null
-}
-
 async function loadSession() {
   const id = route.params.id as string
   if (!id) return
@@ -238,7 +252,7 @@ async function loadSession() {
     // Pick server copy vs this browser's local draft (rules in services/resume.ts).
     // A failed S3 download throws to the outer handler -> error state with retry;
     // falling back to an empty document would let autosave overwrite saved lyrics.
-    const server = decodeServerScript(await fetchServerScript(session.value.script, id))
+    const server = decodeServerScript(await sessionStore.loadScript(id, session.value.script))
     const resume = resolveResume(server, localDraft)
     const selectedDelta = resume.delta
     const cursorPosition = resume.cursorPosition
@@ -319,6 +333,43 @@ function retryLoad() {
 
 function handleRetry() {
   flush()
+}
+
+// --- Conflict: another copy saved newer work (saving is paused) ---
+const inConflict = computed(() => !!session.value && sessionStore.conflictSessionId === session.value.id)
+const resolvingConflict = ref(false)
+const conflictError = ref<string | null>(null)
+const conflictNote = ref<string | null>(null)
+
+async function resolveConflict(action: () => Promise<void>) {
+  resolvingConflict.value = true
+  conflictError.value = null
+  try {
+    await action()
+  } catch (e) {
+    console.error('Failed to resolve conflict:', e)
+    conflictError.value = "Couldn't reach the server. Your lyrics are still here; try again."
+  } finally {
+    resolvingConflict.value = false
+  }
+}
+
+function keepMyVersion() {
+  return resolveConflict(async () => {
+    await sessionStore.resolveConflictKeepMine(session.value!.id)
+    await flush() // retries the refused save, now based on the latest version
+  })
+}
+
+function useLatestVersion() {
+  return resolveConflict(async () => {
+    const mine = quill.value!.getContents() as unknown as QuillDelta
+    const { latest, copyName } = await sessionStore.resolveConflictUseLatest(session.value!.id, mine)
+    // Load the latest into the editor. The resulting text-change autosaves it
+    // once more against the new version, which also marks the draft synced.
+    quill.value!.setContents(decodeServerScript(latest).delta as unknown as Parameters<Quill['setContents']>[0])
+    conflictNote.value = `Your version was saved as "${copyName}".`
+  })
 }
 
 // --- Space-key for BeatPlayer toggle ---

@@ -13,6 +13,14 @@ export class ScriptConflictError extends Error {
 }
 
 /**
+ * Checks by name, not instanceof: the error can cross module copies (code
+ * splitting, test module resets), where instanceof is false for the same class.
+ */
+export function isScriptConflict(err: unknown): err is ScriptConflictError {
+  return (err as { name?: string } | null)?.name === 'ScriptConflictError'
+}
+
+/**
  * Version a save expects the stored script to be at:
  * - string    → must still be this version (S3 ETag)
  * - null      → must not exist yet (first save of a new session)

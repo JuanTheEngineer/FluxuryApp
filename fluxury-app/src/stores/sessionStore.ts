@@ -6,6 +6,7 @@ import type {
 } from '@/services/api'
 import { sessionsApi, storageApi } from '@/services/api'
 import { encodeServerScript } from '@/services/resume'
+import { ScriptConflictError, isScriptConflict } from '@/services/scriptConflict'
 import type { QuillDelta } from '@/services/localDraft'
 
 export const useSessionStore = defineStore('sessionStore', {
@@ -15,6 +16,10 @@ export const useSessionStore = defineStore('sessionStore', {
     isLoading: false,
     error: null as string | null,
     successMessage: null as string | null,
+    /** Script version each open session's copy is based on (see loadScript). */
+    scriptVersions: {} as Record<string, string | null>,
+    /** Session whose saves are paused because another copy saved newer work. */
+    conflictSessionId: null as string | null,
   }),
 
   getters: {
@@ -182,14 +187,50 @@ export const useSessionStore = defineStore('sessionStore', {
       }
     },
 
+    // --- Session script (lyrics) with conflict detection ---
+    //
+    // Each open copy remembers the version of the script it loaded
+    // (scriptVersions). Saves are conditional on that version, so a copy that
+    // is behind (another tab, window or device saved since) is refused instead
+    // of overwriting newer work. See services/scriptConflict.ts.
+
+    /** Load the session's script, recording the version this copy is based on. */
+    async loadScript(id: string, script: string | undefined): Promise<unknown> {
+      if (this.conflictSessionId === id) this.conflictSessionId = null
+      if (script?.startsWith('data:application/json;base64,')) {
+        // Demo mode inlines the script; there is no version to compare against.
+        delete this.scriptVersions[id]
+        try {
+          return JSON.parse(atob(script.split(',')[1]))
+        } catch {
+          return null
+        }
+      }
+      if (script?.startsWith('s3://')) {
+        // A download failure throws: the caller must not fall back to an empty
+        // document, which autosave would then save over the real lyrics.
+        const stored = await storageApi.downloadSessionScript(id)
+        this.scriptVersions[id] = stored.version
+        return stored.content
+      }
+      this.scriptVersions[id] = null // no lyrics saved yet
+      return null
+    },
+
     // Rethrows on failure: useAutosave treats a resolved promise as "saved",
     // so swallowing the error here made failed saves look successful.
     async saveScript(id: string, delta: unknown): Promise<string> {
+      // Saving is paused until the user resolves a conflict; this throws
+      // without a network call, so autosave retries can't overwrite anything.
+      if (this.conflictSessionId === id) throw new ScriptConflictError(id)
       try {
-        const { url: scriptUrl } = await storageApi.uploadSessionScript(
+        const expected = id in this.scriptVersions ? this.scriptVersions[id] : undefined
+        const { url: scriptUrl, version } = await storageApi.uploadSessionScript(
           id,
           encodeServerScript(delta as QuillDelta, Date.now()),
+          expected,
         )
+        this.scriptVersions[id] = version
         await sessionsApi.updateSession(id, {
           name: this.activeSession?.name ?? '',
           artworkUrl: this.activeSession?.artworkUrl ?? '',
@@ -197,10 +238,46 @@ export const useSessionStore = defineStore('sessionStore', {
         })
         return scriptUrl
       } catch (err: any) {
+        if (isScriptConflict(err)) {
+          this.conflictSessionId = id
+          throw err
+        }
         const errorMessage = err.response?.data?.message || err.message || 'Failed to save script'
         this.setError(errorMessage)
         throw err
       }
+    },
+
+    /** Conflict: overwrite the newer version with this copy's lyrics. */
+    async resolveConflictKeepMine(id: string): Promise<void> {
+      // Rebase onto the latest version so the next save is accepted. The
+      // version being replaced stays recoverable in S3 version history.
+      const latest = await storageApi.downloadSessionScript(id)
+      this.scriptVersions[id] = latest.version
+      this.conflictSessionId = null
+    },
+
+    /**
+     * Conflict: switch to the newer version, first saving this copy's lyrics
+     * as a new session so nothing is lost. Returns the latest script and the
+     * name of the copy.
+     */
+    async resolveConflictUseLatest(id: string, mine: QuillDelta): Promise<{ latest: unknown; copyName: string }> {
+      const original = this.activeSession?.id === id ? this.activeSession : null
+      const copyName = `${original?.name || 'Untitled Session'} (my version)`
+      const beatId = (original as { beatId?: string } | null)?.beatId
+      // CreateSessionRequestContent lacks beatId (BACKLOG Batch D, one API contract)
+      const created = await sessionsApi.createSession(
+        { name: copyName, ...(beatId ? { beatId } : {}) } as CreateSessionRequestContent,
+      )
+      const copyId = created.data.id
+      const { url } = await storageApi.uploadSessionScript(copyId, encodeServerScript(mine, Date.now()), null)
+      await sessionsApi.updateSession(copyId, { name: copyName, artworkUrl: '', script: url })
+
+      const latest = await storageApi.downloadSessionScript(id)
+      this.scriptVersions[id] = latest.version
+      this.conflictSessionId = null
+      return { latest: latest.content, copyName }
     },
   },
 })
