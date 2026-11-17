@@ -41,10 +41,13 @@ These stop the save bug from coming back without anyone noticing.
 
 Same feature end to end: the button, the API call, and cleaning up storage.
 
-- [ ] **Delete a session from the UI** *(requested 2026-11-16)*: there's no way to delete a session today. `sessionStore.deleteSession()` and the API `DELETE /sessions/{id}` already exist; only the UI is missing. Reuse the beat browser's inline "Delete? Yes / No" confirm so it matches the existing pattern and prevents accidental taps. Decide where it lives: the session card, the editor, or both.
-- [ ] **Deleting a session leaves its lyrics file in S3**: the `sessions` Lambda deletes only the DynamoDB item, so `sessions/<id>/script.json` is orphaned. Delete the S3 object in the Lambda as part of the same delete. Found while adding test cleanup on 2026-11-16.
+- [x] **Delete a session from the UI** (2026-11-17): trash button on each session card (always visible, no hover-only control), with a 5-second **Undo** bar instead of a confirm dialog. The delete runs after the window, or immediately when leaving the list. (`07feb6b`, `eb07513`) *(committed, needs `./deploy.sh all`)*
+- [x] **Deleting a session leaves its lyrics file in S3**: the Lambda now deletes everything under `sessions/<id>/` after the ownership-checked DynamoDB delete; deleted files stay recoverable 30 days via versioning. The store also clears the session's local draft. (`3084cec`, `215fda6`)
+- [x] **Undo or soft delete?** Undo window chosen (above). Server-side recovery is S3 versioning + DynamoDB PITR.
+- [ ] **Delete from inside the editor**: only the session list has delete today. Add only if wanted; deleting mid-write is the riskier place for it.
+- [ ] **Session deleted while open elsewhere**: a tab or device that still has it open gets a generic "Save failed" (S3 `If-Match` on a deleted file returns 404). Should say "This session was deleted" and offer to save the lyrics as a new session.
+- [ ] **Delete is lost if the tab closes during the 5-second Undo window**: the session simply stays (safe side). Could commit on `pagehide` with a keepalive request.
 - [ ] **Conflict copies are separate sessions**: "Use the latest version" saves your text as a new "(my version)" session. Fine for now; a real version-history view (S3 versions are already kept 30 days) would be nicer.
-- [ ] **Undo or soft delete?** Lyrics are the one thing users can't recreate. Consider an "Undo" toast for a few seconds before the delete commits, rather than a hard delete on confirm.
 
 ## P1 — Batch B: Session open experience (`SessionEditorView.vue` load/mount)
 
@@ -73,7 +76,8 @@ Stop testing on the only environment, which users also use.
 
 - [ ] **Fix the 28 existing `vue-tsc` errors** (`beatId`, `Timeout` types, mock delta typing, and others)
 - [ ] **One API contract**: generate client types from `fluxury-smithy/` and make the mock return the same shapes as the real API (mock uses `data:` URLs, real uses `s3://`, and that mismatch is how the reopen bug hid)
-- [ ] **Stop committing build output**: `fluxury-infra/lib/*.js` next to the `.ts` files, `cdk.out`, `cookies.txt`. The stale `lib/beta-stack.js` made Jest test old code on 2026-11-14 (worked around via `moduleFileExtensions`). Delete the stale `.js` files.
+- [ ] **Stop committing build output**: `fluxury-app/test-results/.last-run.json` is tracked even though `test-results/` is now gitignored; `git rm --cached` it.
+- [ ] **Stop committing build output (infra)**: `fluxury-infra/lib/*.js` next to the `.ts` files, `cdk.out`, `cookies.txt`. The stale `lib/beta-stack.js` made Jest test old code on 2026-11-14 (worked around via `moduleFileExtensions`). Delete the stale `.js` files.
 - [ ] **Decide on tracking `.env.beta`** (public-ish IDs, not secrets)
 - [ ] **`tests/setup.ts` forces demo mode globally**: real-mode tests need a module reset to escape it
 - [x] **Unit tests broke when `.env.local` pointed at beta**: all 155 tried to hit the network. Vitest now pins `VITE_DEMO_MODE=true` (2026-11-16)
