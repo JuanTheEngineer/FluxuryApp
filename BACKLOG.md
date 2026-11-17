@@ -47,7 +47,7 @@ Same feature end to end: the button, the API call, and cleaning up storage.
 Same code path: what happens between opening a session and the editor being ready.
 
 - [ ] **Flash of empty UI on open**: a session briefly shows no lyrics and no beat before the real content arrives. Needs a proper loading treatment so the user never sees "empty" before the data comes back. Design is still open. *(reported 2026-11-14)*
-- [x] **Cursor jumps to the start after the first keystroke, and the Quill `offset` error spam**: one root cause. Quill was stored in `ref()`, a deep Vue Proxy that breaks Quill's selection code, so `getSelection()` threw and the cursor reset to 0 (`test` became `est…t`). Fixed with `shallowRef`; the beta test now also fails on any uncaught page error. Found by the beta test on 2026-11-16. *(fixed locally, needs deploy)*
+- [x] **Cursor jumps to the start after the first keystroke, and the Quill `offset` error spam**: one root cause. Quill was stored in `ref()`, a deep Vue Proxy that breaks Quill's selection code, so `getSelection()` threw and the cursor reset to 0 (`test` became `est…t`). Fixed with `shallowRef`; the beta test now also fails on any uncaught page error. Found by the beta test on 2026-11-16. (`6b79595`, verified live 2026-11-16)
 - [ ] **Investigate a `cognito-idp` 400 on page load**: it appears in the console on open. Find out whether it's a harmless token-refresh miss or a real auth bug.
 
 ---
