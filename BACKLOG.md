@@ -7,7 +7,7 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ## P0 — Now
 
-_Nothing blocking. Multi-copy resume fix committed (`1fdd1a3`), needs deploy._
+_Nothing blocking. Multi-copy resume fix deployed and verified live 2026-11-16 (`1fdd1a3`)._
 
 ---
 
