@@ -57,6 +57,8 @@ Same code path: what happens between opening a session and the editor being read
 
 - [x] **Flash of empty UI on open** (2026-11-17): it showed an empty editor + "No beat selected" while the whole beat list downloaded, then "Loading session...", then the session. Now an editor-shaped skeleton from the first frame, session and beats load in parallel, the player area has a same-size placeholder until the beat is known, and "No beat selected" only shows when true. The player keeps its full size while audio loads. (`79951dd`, `699d5aa`). Deployed 2026-11-17; beta test passes live.
 - [x] **"Sign in to edit" shown to signed-in writers during a save conflict** (`ecf4c80`; regression from `d1f4db3`)
+- [x] **Session titles couldn't contain spaces** (reported 2026-11-17): a page-wide key listener blocked Space outside the lyrics editor, which also broke Space on focused buttons. Removed. (`3886d34`) *(committed, needs `./deploy.sh frontend`)*
+- [ ] **Space to play/pause the beat** (idea): what that removed listener was named for but never did. If wanted: only when focus isn't in a text field or on a control.
 - [x] **Cursor jumps to the start after the first keystroke, and the Quill `offset` error spam**: one root cause. Quill was stored in `ref()`, a deep Vue Proxy that breaks Quill's selection code, so `getSelection()` threw and the cursor reset to 0 (`test` became `est…t`). Fixed with `shallowRef`; the beta test now also fails on any uncaught page error. Found by the beta test on 2026-11-16. (`6b79595`, verified live 2026-11-16)
 - [ ] **Investigate a `cognito-idp` 400 on page load**: it appears in the console on open. Find out whether it's a harmless token-refresh miss or a real auth bug.
 
