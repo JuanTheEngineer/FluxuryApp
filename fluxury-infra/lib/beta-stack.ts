@@ -68,7 +68,8 @@ export class BetaStack extends Stack {
         requireSymbols: false,
       },
       accountRecovery: AccountRecovery.EMAIL_ONLY,
-      removalPolicy: RemovalPolicy.DESTROY, // For beta only
+      // RETAIN: deleting or replacing the stack must never delete user accounts.
+      removalPolicy: RemovalPolicy.RETAIN,
     })
 
     const userPoolClient = new UserPoolClient(this, 'FluxuryBetaUserClient', {
@@ -97,7 +98,9 @@ export class BetaStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       // Restore to any second in the last 35 days (accidental delete/overwrite)
       pointInTimeRecovery: true,
-      removalPolicy: RemovalPolicy.DESTROY,
+      // RETAIN: PITR lives inside the table, so it can't help if the table
+      // itself is deleted with the stack.
+      removalPolicy: RemovalPolicy.RETAIN,
     })
 
     // GSI: List sessions by owner, sorted by modified date
@@ -113,7 +116,7 @@ export class BetaStack extends Stack {
       partitionKey: { name: 'id', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
-      removalPolicy: RemovalPolicy.DESTROY,
+      removalPolicy: RemovalPolicy.RETAIN,
     })
 
     // S3 Bucket for File Storage
@@ -125,8 +128,11 @@ export class BetaStack extends Stack {
       // delete can be undone by restoring the previous version of script.json.
       versioned: true,
       accessControl: BucketAccessControl.PRIVATE,
-      removalPolicy: RemovalPolicy.DESTROY, // For beta only
-      autoDeleteObjects: true, // For beta only
+      // RETAIN, and no autoDeleteObjects: this bucket holds every writer's
+      // lyrics. CDK's auto-delete handler would empty it (all versions) when the
+      // stack is deleted. Turning autoDeleteObjects off removes the bucket's
+      // `aws-cdk:auto-delete-objects` tag first, so the handler skips it.
+      removalPolicy: RemovalPolicy.RETAIN,
       lifecycleRules: [
         {
           // Autosave writes a new version every few seconds while typing;
