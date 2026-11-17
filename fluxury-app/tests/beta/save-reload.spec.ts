@@ -11,10 +11,10 @@ import { test, expect, type Browser, type Page } from '@playwright/test'
  * Side effect: creates one "Untitled Session" per run in the test account.
  */
 
-const USERNAME = process.env.FLUXURY_E2E_USERNAME
-const PASSWORD = process.env.FLUXURY_E2E_PASSWORD
+const USERNAME = process.env.FLUXURY_BETA_TEST_USERNAME
+const PASSWORD = process.env.FLUXURY_BETA_TEST_PASSWORD
 
-test.skip(!USERNAME || !PASSWORD, 'Set FLUXURY_E2E_USERNAME and FLUXURY_E2E_PASSWORD')
+test.skip(!USERNAME || !PASSWORD, 'Set FLUXURY_BETA_TEST_USERNAME and FLUXURY_BETA_TEST_PASSWORD')
 
 async function logIn(page: Page) {
   await page.goto('/login')
@@ -32,7 +32,7 @@ async function freshLoggedInPage(browser: Browser): Promise<Page> {
 }
 
 test('lyrics survive save -> reopen in a fresh browser', async ({ browser }) => {
-  const marker = `e2e bar ${Date.now()}`
+  const marker = `test bar ${Date.now()}`
   const failedRequests: string[] = []
 
   // --- Write ---

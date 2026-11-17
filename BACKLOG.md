@@ -31,7 +31,7 @@ These stop the save bug from coming back without anyone noticing.
 
 - [x] **CDK assertion test**: bucket CORS allows `GET` + `PUT` from every app origin (`fluxury-infra/test/beta-stack.cors.test.ts`). Run with `cd fluxury-infra && npm test`.
 - [x] **Live smoke check `scripts/verify-deployment.sh`**: preflights S3 `PUT`/`GET` from every app origin, checks API CORS and that the frontend loads. Read-only, no login. Runs automatically at the end of `./deploy.sh`.
-- [~] **Playwright e2e test against the deployed beta**: `tests/e2e-beta/save-reload.spec.ts`, run with `npm run test:e2e:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. **Written, not yet run:** needs a dedicated test account (`FLUXURY_E2E_USERNAME` / `FLUXURY_E2E_PASSWORD`). Each run leaves one "Untitled Session" in that account.
+- [~] **Beta test (Playwright) against the deployed beta**: `tests/beta/save-reload.spec.ts`, run with `npm run test:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. **Written, not yet run:** needs a dedicated test account (`FLUXURY_BETA_TEST_USERNAME` / `FLUXURY_BETA_TEST_PASSWORD`). Each run leaves one "Untitled Session" in that account.
 - [ ] **Data protection**: S3 versioning plus DynamoDB point-in-time recovery
 
 ## P1 — Batch B: Session open experience (`SessionEditorView.vue` load/mount)
