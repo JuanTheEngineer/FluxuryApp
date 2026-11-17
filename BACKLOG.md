@@ -7,11 +7,7 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ## P0 — Now
 
-Silent data loss for anyone who uses more than one device (e.g. phone + laptop).
-
-- [ ] **Stale local draft overwrites newer work from another device (data loss)** *(found 2026-11-16)*: on open, `SessionEditorView` uses the local draft if `draft.editTimestamp > serverTimestamp`, but the server file never contains an `editTimestamp` (`saveScript` uploads the raw delta), so `serverTimestamp` is always 0. Local drafts are also never cleared after a successful save. Result: any device that ever edited a session shows ITS OWN old draft, and the next keystroke autosaves it over newer work from another device.
-  - **Step 1 (fix):** save `{ delta, editTimestamp }`; mark the local draft synced after a successful server save; on open, use the draft only if it has unsynced edits. Add a test: save on device A, save newer on device B, reopen on A → B's version.
-  - **Step 2 (conflict detection):** save with S3 conditional writes (`If-Match` on the ETag loaded at open, already exposed via CORS). On `412`, show "This session changed on another device", with Keep mine / Keep theirs / Keep both. No client clocks involved.
+_Nothing blocking. Multi-copy resume fix committed (`1fdd1a3`), needs deploy._
 
 ---
 
@@ -33,6 +29,7 @@ What already exists:
 
 These stop the save bug from coming back without anyone noticing.
 
+- [ ] **A copy left open with stale content can still save over newer work** (was P0 step 2): e.g. a laptop tab left open while you write on your phone, then you type on the laptop. Fix: save with S3 conditional writes (`If-Match` on the ETag loaded at open, already exposed via CORS). On `412`, show "This session changed somewhere else", with Keep mine / Keep theirs / Keep both. No client clocks. Extend `tests/integration/multi-copy-resume.test.ts`.
 - [x] **CDK assertion test**: bucket CORS allows `GET` + `PUT` from every app origin (`fluxury-infra/test/beta-stack.cors.test.ts`). Run with `cd fluxury-infra && npm test`.
 - [x] **Live smoke check `scripts/verify-deployment.sh`**: preflights S3 `PUT`/`GET` from every app origin, checks API CORS and that the frontend loads. Read-only, no login. Runs automatically at the end of `./deploy.sh`.
 - [x] **Beta test (Playwright) against the deployed beta**: `tests/beta/save-reload.spec.ts`, run with `npm run test:beta`. It types real keys, waits for "Saved", then reopens in a fresh browser with no local draft and checks the lyrics. Test account: Cognito user `beta` (created 2026-11-16). Cleans up after itself: deletes its own session (even on failure) and sweeps leftover "Untitled Session"s in the test account. Add `FLUXURY_BETA_LOCAL=1` to test local code against the beta backend before deploying.
@@ -88,6 +85,9 @@ Stop testing on the only environment, which users also use.
 ---
 
 ## Done
+
+- [x] **Stale local draft overrode newer work from other tabs, windows or devices** (P0, 2026-11-16): the server copy had no timestamp, so any old draft won. Saves now store `{ delta, editTimestamp }`, drafts are marked synced after a matching save, and `services/resume.ts` decides (unsynced edits newer than the server win, nothing else). Legacy drafts count as synced. (`0f5ba3a`, `1fdd1a3`)
+- [x] **Local drafts were never saved to IndexedDB**: `DataCloneError` on the Vue proxy, only logged, so the 500ms local safety net never worked in a real browser. (`09b9442`)
 
 - [x] "New Session" opens a "Pick a beat" view with a **Write without a beat** option, and a failed load no longer reuses the previous session (`4d12835`)
 - [x] Lyrics save on the live site: S3 bucket CORS now allows `PUT` from the app's origins. Verified live on 2026-11-14, desktop save→reopen (`d25248c`)
