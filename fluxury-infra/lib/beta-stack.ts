@@ -95,7 +95,8 @@ export class BetaStack extends Stack {
       tableName: `fluxury-beta-sessions-${props.environment}`,
       partitionKey: { name: 'id', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: false,
+      // Restore to any second in the last 35 days (accidental delete/overwrite)
+      pointInTimeRecovery: true,
       removalPolicy: RemovalPolicy.DESTROY,
     })
 
@@ -111,7 +112,7 @@ export class BetaStack extends Stack {
       tableName: `fluxury-beta-beats-${props.environment}`,
       partitionKey: { name: 'id', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: false,
+      pointInTimeRecovery: true,
       removalPolicy: RemovalPolicy.DESTROY,
     })
 
