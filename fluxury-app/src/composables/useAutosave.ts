@@ -120,8 +120,10 @@ export function useAutosave(options: UseAutosaveOptions): UseAutosaveReturn {
 
   /**
    * Write the current delta to the local draft store.
+   * `synced` = true only right after a server save that matches this content;
+   * a synced draft is a cache and never overrides the server on reopen.
    */
-  async function writeLocalDraft(): Promise<void> {
+  async function writeLocalDraft(synced = false): Promise<void> {
     const currentDelta = delta.value
     const currentSessionId = sessionId.value
     if (!currentDelta || !currentSessionId) return
@@ -141,6 +143,7 @@ export function useAutosave(options: UseAutosaveOptions): UseAutosaveReturn {
       beatPlaybackPosition: playback.beatPlaybackPosition,
       beatVolume: playback.beatVolume,
       beatLooping: playback.beatLooping,
+      synced,
     }
 
     try {
@@ -178,6 +181,9 @@ export function useAutosave(options: UseAutosaveOptions): UseAutosaveReturn {
         // No new edits — fully saved
         transitionStatus('saved')
         lastSavedAt.value = Date.now()
+        // The draft now matches the server: mark it so it can't later
+        // override newer work saved from another tab, window or device.
+        await writeLocalDraft(true)
       }
     } catch (error) {
       if (isNetworkError(error)) {
@@ -300,6 +306,7 @@ export function useAutosave(options: UseAutosaveOptions): UseAutosaveReturn {
         beatPlaybackPosition: playback.beatPlaybackPosition,
         beatVolume: playback.beatVolume,
         beatLooping: playback.beatLooping,
+        synced: saveStatus.value === 'saved',
       }
       localStorage.setItem(
         `fluxury-draft-${currentSessionId}`,

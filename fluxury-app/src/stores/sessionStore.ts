@@ -5,6 +5,8 @@ import type {
   GetSessionResponseContent,
 } from '@/services/api'
 import { sessionsApi, storageApi } from '@/services/api'
+import { encodeServerScript } from '@/services/resume'
+import type { QuillDelta } from '@/services/localDraft'
 
 export const useSessionStore = defineStore('sessionStore', {
   state: () => ({
@@ -184,7 +186,10 @@ export const useSessionStore = defineStore('sessionStore', {
     // so swallowing the error here made failed saves look successful.
     async saveScript(id: string, delta: unknown): Promise<string> {
       try {
-        const scriptUrl = await storageApi.uploadSessionScript(id, delta)
+        const scriptUrl = await storageApi.uploadSessionScript(
+          id,
+          encodeServerScript(delta as QuillDelta, Date.now()),
+        )
         await sessionsApi.updateSession(id, {
           name: this.activeSession?.name ?? '',
           artworkUrl: this.activeSession?.artworkUrl ?? '',

@@ -152,6 +152,67 @@ describe('useAutosave', () => {
     })
   })
 
+  describe('local draft sync flag (multi-copy resume)', () => {
+    const setCalls = () => vi.mocked(localDraftService.set).mock.calls.map(([d]) => d)
+
+    it('writes edits to the local draft as unsynced', async () => {
+      const { delta, destroy } = createAutosave()
+      delta.value = createDelta('bars')
+      await nextTick()
+      vi.advanceTimersByTime(500)
+      await flushMicrotasks()
+
+      expect(setCalls().at(-1)).toMatchObject({ delta: createDelta('bars'), synced: false })
+      destroy()
+    })
+
+    it('marks the draft synced after a server save with no newer edits', async () => {
+      const { delta, destroy } = createAutosave()
+      delta.value = createDelta('bars')
+      await nextTick()
+      vi.advanceTimersByTime(1500)
+      await flushMicrotasks()
+
+      expect(saveFn).toHaveBeenCalledTimes(1)
+      expect(setCalls().at(-1)).toMatchObject({ delta: createDelta('bars'), synced: true })
+      destroy()
+    })
+
+    it('keeps the draft unsynced when edits arrive during the save', async () => {
+      let finishSave!: () => void
+      saveFn.mockImplementationOnce(() => new Promise<string>((resolve) => { finishSave = () => resolve('v1') }))
+      const { delta, destroy } = createAutosave()
+
+      delta.value = createDelta('first')
+      await nextTick()
+      vi.advanceTimersByTime(1500) // save of 'first' starts and hangs
+      await flushMicrotasks()
+
+      delta.value = createDelta('first, second') // edit during the save
+      await nextTick()
+      vi.advanceTimersByTime(500)
+      await flushMicrotasks()
+      finishSave()
+      await flushMicrotasks()
+
+      expect(setCalls().some((d) => d.synced === true)).toBe(false)
+      destroy()
+    })
+
+    it('keeps the draft unsynced when the server save fails', async () => {
+      saveFn.mockRejectedValue(new TypeError('Failed to fetch'))
+      const { delta, destroy } = createAutosave()
+      delta.value = createDelta('offline bars')
+      await nextTick()
+      vi.advanceTimersByTime(1500)
+      await flushMicrotasks()
+
+      expect(setCalls().length).toBeGreaterThan(0)
+      expect(setCalls().every((d) => d.synced === false)).toBe(true)
+      destroy()
+    })
+  })
+
   describe('debounce → server write', () => {
     it('attempts server write after debounce expires (1.5s)', async () => {
       const { delta, destroy } = createAutosave()

@@ -106,6 +106,7 @@ import { useSessionLifecycle } from '@/composables/useSessionLifecycle'
 import { useConnectivity } from '@/composables/useConnectivity'
 import { useTimingMetrics } from '@/composables/useTimingMetrics'
 import { localDraftService, type LocalDraft } from '@/services/localDraft'
+import { decodeServerScript, resolveResume } from '@/services/resume'
 import BeatPlayer from '@/components/BeatPlayer.vue'
 import SaveStatus from '@/components/SaveStatus.vue'
 
@@ -196,7 +197,25 @@ function focusEditor() {
   quill.value.focus()
 }
 
-// --- Session loading with Last_Write_Wins ---
+// --- Session loading ---
+
+/**
+ * Raw contents of the session's script, or null for a session with no lyrics
+ * yet. Demo mode inlines it as a data URL; real mode stores an s3:// pointer.
+ * A malformed data URL yields null; an S3 download failure throws.
+ */
+async function fetchServerScript(script: string | undefined, id: string): Promise<unknown> {
+  if (script?.startsWith('data:application/json;base64,')) {
+    try {
+      return JSON.parse(atob(script.split(',')[1]))
+    } catch {
+      return null
+    }
+  }
+  if (script?.startsWith('s3://')) return storageApi.downloadSessionScript(id)
+  return null
+}
+
 async function loadSession() {
   const id = route.params.id as string
   if (!id) return
@@ -216,47 +235,13 @@ async function loadSession() {
     const localDraft = await localDraftService.get(id)
     resumeState.value = localDraft
 
-    // Parse server delta
-    let serverDelta: any = { ops: [{ insert: '\n' }] }
-    let serverTimestamp = 0
-    let loadScriptError: unknown = null
-    try {
-      let parsed: any = null
-      if (session.value.script?.startsWith('data:application/json;base64,')) {
-        // Demo mode: script is inlined as a data URL
-        parsed = JSON.parse(atob(session.value.script.split(',')[1]))
-      } else if (session.value.script?.startsWith('s3://')) {
-        // Real mode: script is an S3 pointer. A download failure must NOT fall
-        // back to an empty document (autosave would then overwrite saved lyrics),
-        // so it is rethrown to the outer handler -> error state with retry.
-        try {
-          parsed = await storageApi.downloadSessionScript(id)
-        } catch (e) {
-          loadScriptError = e
-        }
-      }
-      if (loadScriptError) throw loadScriptError
-      if (parsed) {
-        if (parsed.delta) {
-          serverDelta = parsed.delta
-          serverTimestamp = parsed.editTimestamp || 0
-        } else {
-          serverDelta = parsed
-        }
-      }
-    } catch (e) {
-      if (loadScriptError) throw e
-      // Default welcome content for new sessions
-      serverDelta = { ops: [{ insert: '\n' }] }
-    }
-
-    // Last_Write_Wins: pick newer of server vs local draft
-    let selectedDelta = serverDelta
-    let cursorPosition = 0
-    if (localDraft && localDraft.editTimestamp > serverTimestamp) {
-      selectedDelta = localDraft.delta
-      cursorPosition = localDraft.cursorPosition || 0
-    }
+    // Pick server copy vs this browser's local draft (rules in services/resume.ts).
+    // A failed S3 download throws to the outer handler -> error state with retry;
+    // falling back to an empty document would let autosave overwrite saved lyrics.
+    const server = decodeServerScript(await fetchServerScript(session.value.script, id))
+    const resume = resolveResume(server, localDraft)
+    const selectedDelta = resume.delta
+    const cursorPosition = resume.cursorPosition
 
     // Transition to ready BEFORE mounting Quill so the v-else block renders the editor container
     transition('ready')
@@ -281,7 +266,9 @@ async function loadSession() {
     // Quill 2.x fires selection-change during setContents which can crash on empty/complex deltas
     const safeDeltas = selectedDelta?.ops?.length > 0 ? selectedDelta : { ops: [{ insert: '\n' }] }
     quill.value.disable()
-    quill.value.setContents(safeDeltas)
+    // Our stored QuillDelta is plain JSON in Quill's Delta shape; Quill's own
+    // Delta type is a class, so assert at this one boundary.
+    quill.value.setContents(safeDeltas as unknown as Parameters<Quill['setContents']>[0])
     if (!isReadOnly) {
       quill.value.enable()
     }

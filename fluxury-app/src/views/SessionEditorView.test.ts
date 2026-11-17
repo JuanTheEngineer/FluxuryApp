@@ -82,10 +82,10 @@ describe('SessionEditorView', () => {
     expect(MockedQuill).toHaveBeenCalled()
   })
 
-  // Validates: Requirement 9.3 (Last_Write_Wins — local newer wins)
-  it('uses local draft delta when its timestamp is newer than server', async () => {
+  // Validates: Requirement 9.3 (Last_Write_Wins — unsynced local edits newer than server win)
+  it('uses an unsynced local draft when its timestamp is newer than server', async () => {
     const localDelta = { ops: [{ insert: 'local wins\n' }] }
-    mockLocalDraftGet.mockResolvedValue({ sessionId: 'session-1', delta: localDelta,
+    mockLocalDraftGet.mockResolvedValue({ sessionId: 'session-1', delta: localDelta, synced: false,
       editTimestamp: 2000, cursorPosition: 5, beatPlaybackPosition: 0, beatVolume: 0.8, beatLooping: false })
     const serverPayload = JSON.stringify({ delta: { ops: [{ insert: 'server\n' }] }, editTimestamp: 1000 })
     mockLoadSession.mockImplementation(async () => {
@@ -94,6 +94,19 @@ describe('SessionEditorView', () => {
     await mountAndSettle()
     const q = MockedQuill.mock.results[0]?.value as any
     expect(q.setContents).toHaveBeenCalledWith(localDelta)
+  })
+
+  it('ignores a synced local draft and shows the server copy (saved elsewhere)', async () => {
+    const serverDelta = { ops: [{ insert: 'server\n' }] }
+    mockLocalDraftGet.mockResolvedValue({ sessionId: 'session-1', delta: { ops: [{ insert: 'old\n' }] }, synced: true,
+      editTimestamp: 9000, cursorPosition: 5, beatPlaybackPosition: 0, beatVolume: 0.8, beatLooping: false })
+    const serverPayload = JSON.stringify({ delta: serverDelta, editTimestamp: 1000 })
+    mockLoadSession.mockImplementation(async () => {
+      mockActiveSessionValue = { id: 'session-1', name: 'S', script: `data:application/json;base64,${btoa(serverPayload)}`, beatUrl: '/beats/t.wav' }
+    })
+    await mountAndSettle()
+    const q = MockedQuill.mock.results[0]?.value as any
+    expect(q.setContents).toHaveBeenCalledWith(serverDelta)
   })
 
   // Validates: Requirement 11.2 (Error state + retry)
