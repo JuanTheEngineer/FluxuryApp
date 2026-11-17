@@ -41,9 +41,10 @@ These stop the save bug from coming back without anyone noticing.
 
 Same feature end to end: the button, the API call, and cleaning up storage.
 
-- [x] **Delete a session** (2026-11-17): from the editor's **⋯** menu → Delete session. Back on the list the session disappears with a 5-second **Undo**; the delete runs after that, or immediately when leaving the list. No per-card delete button (a rare destructive action shouldn't sit on every card). (`07feb6b`, `6572d02`, `520b115`, `60c5b8c`) *(committed, needs `./deploy.sh all`)*
+- [x] **Delete a session** (2026-11-17): from the editor's **⋯** menu → Delete session. Back on the list the session disappears with a 5-second **Undo**; the delete runs after that, or immediately when leaving the list. No per-card delete button (a rare destructive action shouldn't sit on every card). (`07feb6b`, `6572d02`, `520b115`, `60c5b8c`). Deployed and verified live 2026-11-17: the Lambda left an S3 delete marker on the deleted session's script.json.
 - [x] **Deleting a session leaves its lyrics file in S3**: the Lambda now deletes everything under `sessions/<id>/` after the ownership-checked DynamoDB delete; deleted files stay recoverable 30 days via versioning. The store also clears the session's local draft. (`3084cec`, `215fda6`)
 - [x] **Undo or soft delete?** Undo window chosen (above). Server-side recovery is S3 versioning + DynamoDB PITR.
+- [ ] **18 orphaned lyrics folders in S3** from sessions deleted before the cleanup fix (mostly old beta test runs; 2 real sessions remain). A few KB in total. Delete `sessions/<id>/` for any id with no DynamoDB record; versioning keeps them 30 days anyway.
 - [ ] **Bulk cleanup**: if deleting many sessions becomes a chore, add a "Select" mode on the list rather than per-card delete buttons.
 - [ ] **Session deleted while open elsewhere**: a tab or device that still has it open gets a generic "Save failed" (S3 `If-Match` on a deleted file returns 404). Should say "This session was deleted" and offer to save the lyrics as a new session.
 - [ ] **Delete is lost if the tab closes during the 5-second Undo window**: the session simply stays (safe side). Could commit on `pagehide` with a keepalive request.
