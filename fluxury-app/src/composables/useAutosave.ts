@@ -202,6 +202,15 @@ export function useAutosave(options: UseAutosaveOptions): UseAutosaveReturn {
   // --- Scheduling ---
 
   /**
+   * Unsaved edits that a server write should pick up: fresh edits ('dirty'),
+   * or edits whose last save failed ('error'; retried by the next edit's
+   * debounce or the Retry button via flush(), never on a timer by itself).
+   */
+  function hasPendingServerWrite(): boolean {
+    return saveStatus.value === 'dirty' || saveStatus.value === 'error'
+  }
+
+  /**
    * Schedule a local draft write within localWriteMs.
    * Resets the timer on every call (batching rapid edits).
    */
@@ -225,7 +234,7 @@ export function useAutosave(options: UseAutosaveOptions): UseAutosaveReturn {
     }
     debounceTimer = setTimeout(() => {
       debounceTimer = null
-      if (saveStatus.value === 'dirty' && isOnline.value) {
+      if (hasPendingServerWrite() && isOnline.value) {
         attemptServerWrite()
       }
     }, debounceMs)
@@ -275,7 +284,7 @@ export function useAutosave(options: UseAutosaveOptions): UseAutosaveReturn {
       debounceTimer = null
     }
 
-    if (saveStatus.value === 'dirty' && !isSaving) {
+    if (hasPendingServerWrite() && !isSaving) {
       await attemptServerWrite()
     }
   }

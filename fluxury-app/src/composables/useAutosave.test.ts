@@ -596,7 +596,7 @@ describe('useAutosave', () => {
       destroy()
     })
 
-    it('error → saving on retry (via flush after making dirty)', async () => {
+    it('error → saving on retry via flush()', async () => {
       const serverError = new Error('Server Error')
       ;(serverError as Record<string, unknown>).response = { status: 500 }
       saveFn.mockRejectedValueOnce(serverError)
@@ -611,13 +611,34 @@ describe('useAutosave', () => {
       await nextTick()
       expect(saveStatus.value).toBe('error')
 
-      // From error state, a new edit makes it dirty, then flush retries
+      // The Retry button calls flush(): it must retry from 'error'
+      await flush()
+      await flushMicrotasks()
+      expect(saveFn).toHaveBeenCalledTimes(2)
+      expect(saveStatus.value).toBe('saved')
+      destroy()
+    })
+
+    it('a new edit after an error retries the save after the debounce', async () => {
+      const serverError = new Error('Server Error')
+      ;(serverError as Record<string, unknown>).response = { status: 500 }
+      saveFn.mockRejectedValueOnce(serverError)
+      saveFn.mockResolvedValueOnce('v2')
+
+      const { delta, saveStatus, destroy } = createAutosave()
+
+      delta.value = createDelta('a')
+      await nextTick()
+      vi.advanceTimersByTime(1500)
+      await flushMicrotasks()
+      expect(saveStatus.value).toBe('error')
+
       delta.value = createDelta('ab')
       await nextTick()
-      // Note: error → dirty is NOT a valid transition per state machine
-      // The status stays 'error' but flush can still be called to retry
-      // Actually, looking at the state machine: error → saving (user retries)
-      // We need to support flush() from error state directly
+      vi.advanceTimersByTime(1500)
+      await flushMicrotasks()
+      expect(saveFn).toHaveBeenLastCalledWith('session-1', createDelta('ab'))
+      expect(saveStatus.value).toBe('saved')
       destroy()
     })
   })
