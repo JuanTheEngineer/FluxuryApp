@@ -330,3 +330,46 @@ describe('SessionEditorView: opening a session (no flash of empty or wrong conte
     expect(w.text()).toContain('No beat selected')
   })
 })
+
+describe('SessionEditorView: the space bar works everywhere', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockIsOnline.value = true
+    mockLocalDraftGet.mockResolvedValue(null)
+    mockRoute.params = { id: 'session-1' }
+    mockBeatStore.fetchBeats.mockReset().mockResolvedValue(undefined)
+    mockLoadSession.mockReset().mockImplementation(async () => {
+      mockActiveSessionValue = { id: 'session-1', name: 'Verse one', script: null }
+    })
+  })
+
+  async function mountSignedIn() {
+    useAuthStore().isAuthenticated = true
+    const w = mount(SessionEditorView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises(); await nextTick(); await flushPromises(); await nextTick()
+    return w
+  }
+
+  /** Press Space on an element the way a browser would; true if anything blocked it. */
+  function spaceIsBlocked(el: Element): boolean {
+    const e = new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true })
+    el.dispatchEvent(e)
+    return e.defaultPrevented
+  }
+
+  it('lets you type spaces in the session title (regression)', async () => {
+    const w = await mountSignedIn()
+    await w.find('h1').trigger('click')
+    const title = w.find('input')
+    expect(title.exists()).toBe(true)
+
+    expect(spaceIsBlocked(title.element)).toBe(false)
+    w.unmount()
+  })
+
+  it('lets Space press a focused button (keyboard users)', async () => {
+    const w = await mountSignedIn()
+    expect(spaceIsBlocked(w.find('[data-testid="session-menu"]').element)).toBe(false)
+    w.unmount()
+  })
+})

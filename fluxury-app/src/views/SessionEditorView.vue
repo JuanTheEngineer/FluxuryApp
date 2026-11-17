@@ -480,13 +480,6 @@ function useLatestVersion() {
   })
 }
 
-// --- Space-key for BeatPlayer toggle ---
-function handleKeydown(e: KeyboardEvent) {
-  if (e.code === 'Space' && !editorRef.value?.contains(document.activeElement)) {
-    e.preventDefault()
-  }
-}
-
 // --- Route leave flush ---
 onBeforeRouteLeave(async () => {
   await flush()
@@ -530,7 +523,6 @@ function deleteThisSession() {
 }
 
 onMounted(async () => {
-  document.addEventListener('keydown', handleKeydown)
   // In parallel: the lyrics never wait for the beat list (fetchBeats handles
   // its own errors; a failure just means the beat shows as missing).
   const beats = beatStore.fetchBeats().catch(() => {}).finally(() => { beatsLoaded.value = true })
@@ -539,7 +531,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   destroyAutosave()
-  document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('pointerdown', onPointerDownOutside)
 })
 </script>
