@@ -11,9 +11,16 @@ _Nothing blocking. Multi-copy resume fix deployed and verified live 2026-11-16 (
 
 ---
 
-## P1 — Batch E: Artwork (beats + sessions)
+## P1 — Batch E: Beat player redesign + artwork
 
-Same feature area: images on beats and sessions. **Needs a design pass before building.** *(reported 2026-11-14)*
+Same code: `BeatPlayer.vue` and the images on beats and sessions. **Needs a design pass before building.** *(artwork reported 2026-11-14; player redesign requested 2026-11-17)*
+
+- [ ] **Redesign the beat player: modern and mobile-first** *(requested 2026-11-17)*. It currently looks like a first-demo interface. Keep every existing feature:
+  - play/pause, -5s / +5s, loop on/off, seek bar with elapsed/total time, volume
+  - "✍ Write" button when used in the beat browser (`showWriteButton`)
+  - resumes position, volume and loop per session (`initialPosition`, `initialVolume`, `initialLoop`, `update:playbackState`)
+  - `beat-audible` event (timing metrics), loading and error states, same-size loading layout
+  - New: beat artwork and real beat name/creator (items below). Fixed bottom bar must not hide the lyrics on small screens.
 
 What already exists:
 - Beats have a `thumbnailUrl` field, and the beat browser list shows it when it's present.
@@ -57,7 +64,7 @@ Same code path: what happens between opening a session and the editor being read
 
 - [x] **Flash of empty UI on open** (2026-11-17): it showed an empty editor + "No beat selected" while the whole beat list downloaded, then "Loading session...", then the session. Now an editor-shaped skeleton from the first frame, session and beats load in parallel, the player area has a same-size placeholder until the beat is known, and "No beat selected" only shows when true. The player keeps its full size while audio loads. (`79951dd`, `699d5aa`). Deployed 2026-11-17; beta test passes live.
 - [x] **"Sign in to edit" shown to signed-in writers during a save conflict** (`ecf4c80`; regression from `d1f4db3`)
-- [x] **Session titles couldn't contain spaces** (reported 2026-11-17): a page-wide key listener blocked Space outside the lyrics editor, which also broke Space on focused buttons. Removed. (`3886d34`) *(committed, needs `./deploy.sh frontend`)*
+- [x] **Session titles couldn't contain spaces** (reported 2026-11-17): a page-wide key listener blocked Space outside the lyrics editor, which also broke Space on focused buttons. Removed. (`3886d34`). Deployed 2026-11-17.
 - [ ] **Space to play/pause the beat** (idea): what that removed listener was named for but never did. If wanted: only when focus isn't in a text field or on a control.
 - [x] **Cursor jumps to the start after the first keystroke, and the Quill `offset` error spam**: one root cause. Quill was stored in `ref()`, a deep Vue Proxy that breaks Quill's selection code, so `getSelection()` threw and the cursor reset to 0 (`test` became `est…t`). Fixed with `shallowRef`; the beta test now also fails on any uncaught page error. Found by the beta test on 2026-11-16. (`6b79595`, verified live 2026-11-16)
 - [ ] **Investigate a `cognito-idp` 400 on page load**: it appears in the console on open. Find out whether it's a harmless token-refresh miss or a real auth bug.
@@ -86,6 +93,24 @@ Stop testing on the only environment, which users also use.
 - [ ] **Decide on tracking `.env.beta`** (public-ish IDs, not secrets)
 - [ ] **`tests/setup.ts` forces demo mode globally**: real-mode tests need a module reset to escape it
 - [x] **Unit tests broke when `.env.local` pointed at beta**: all 155 tried to hit the network. Vitest now pins `VITE_DEMO_MODE=true` (2026-11-16)
+
+## Later: after the app is stable
+
+### Batch H: Own voice-to-text *(requested 2026-11-17)*
+
+Replace the phone's built-in dictation with a better, free, open-source speech-to-text, built into the writer.
+
+- [ ] **Research and pick an engine** (unverified candidates: OpenAI Whisper run in the browser via WebGPU/WASM, whisper.cpp, Vosk, Moonshine). Criteria: accuracy on rap (slang, fast delivery, over a beat), runs on-device so it's free and private, model size and load time on phones, latency.
+- [ ] **Where it runs**: on-device (no server cost, no audio leaves the phone) vs. a server (better accuracy, costs money per minute). Free points to on-device.
+- [ ] **UX**: one tap to dictate into the editor at the cursor; how it behaves while the beat is playing (the mic will hear the beat).
+
+### Batch I: AI writing assistant (the vision) *(requested 2026-11-17)*
+
+Depends on stable saving/editing and probably on Batch H.
+
+- [ ] **Suggest the next bars while writing** (inline, accept/dismiss).
+- [ ] **Select lines → "Generate more bars"** from the selection.
+- [ ] **Backend**: model choice (e.g. via Amazon Bedrock), per-user cost limits, auth on the endpoint, latency targets. Lyrics are the user's: decide what is sent and stored.
 
 ## P3 — Later / unverified
 
