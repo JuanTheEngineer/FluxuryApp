@@ -8,13 +8,13 @@
     </div>
 
     <!-- Resume card (auth only) -->
-    <div v-if="authStore.isAuthenticated && visibleSessions.length > 0" class="bg-surface-elevated border border-slate-700 rounded-xl p-4 flex items-center justify-between">
+    <div v-if="authStore.isAuthenticated && lastEditedSession" class="bg-surface-elevated border border-slate-700 rounded-xl p-4 flex items-center justify-between">
       <div>
         <p class="text-sm text-slate-400">Continue where you left off</p>
-        <p class="text-slate-100 font-medium">{{ visibleSessions[0]?.name }}</p>
+        <p class="text-slate-100 font-medium">{{ lastEditedSession.name }}</p>
       </div>
       <button
-        @click="openSession(visibleSessions[0])"
+        @click="openSession(lastEditedSession)"
         class="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors"
       >
         Resume
@@ -144,20 +144,20 @@ onBeforeUnmount(() => {
 
 const visibleSessions = computed(() => sessions.value.filter((s) => !deleter.isHidden.value(s.id)))
 
+const editedAt = (s: SessionSummary) => new Date(s.modified || s.created).getTime()
+
+// Most recently edited first. The resume card and the list both read this, so
+// "Continue where you left off" is always the top card (ignoring search).
+const recentSessions = computed(() => [...visibleSessions.value].sort((a, b) => editedAt(b) - editedAt(a)))
+const lastEditedSession = computed(() => recentSessions.value[0] ?? null)
+
 onMounted(async () => {
   await sessionStore.fetchSessions()
 })
 
 const sortedFilteredSessions = computed(() => {
-  const filtered = visibleSessions.value.filter((s) =>
-      s.name.toLowerCase().includes(search.value.toLowerCase())
-  )
-  // Sort by modified date, most recent first
-  return [...filtered].sort((a, b) => {
-    const valA = new Date(a.modified || a.created).getTime()
-    const valB = new Date(b.modified || b.created).getTime()
-    return valB - valA
-  })
+  const query = search.value.toLowerCase()
+  return recentSessions.value.filter((s) => s.name.toLowerCase().includes(query))
 })
 
 const openSession = (session: SessionSummary) => {

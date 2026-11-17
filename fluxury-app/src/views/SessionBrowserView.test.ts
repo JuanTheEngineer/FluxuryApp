@@ -71,6 +71,20 @@ describe('SessionBrowserView: delete with undo', () => {
     expect(w.find('[data-testid="delete-status"]').exists()).toBe(false)
   })
 
+  it('the resume card offers the most recently edited session, whatever the API order', async () => {
+    store.sessions = [
+      session('old', 'Old song', '2026-01-01T10:00:00Z'),
+      session('new', 'New song', '2026-11-17T10:00:00Z'),
+      session('mid', 'Mid song', '2026-06-01T10:00:00Z'),
+    ]
+    const w = await mountList()
+    const resume = w.find('.bg-surface-elevated.border.rounded-xl.p-4')
+    expect(resume.text()).toContain('New song')
+
+    await w.findAll('[data-testid="delete-session"]')[0].trigger('click') // list is newest-first
+    expect(resume.text()).toContain('Mid song')
+  })
+
   it('the resume card skips a session pending deletion', async () => {
     const w = await mountList()
     expect(w.text()).toContain('Continue where you left off')
