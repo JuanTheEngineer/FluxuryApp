@@ -8,6 +8,7 @@ import { sessionsApi, storageApi } from '@/services/api'
 import { encodeServerScript } from '@/services/resume'
 import { ScriptConflictError, isScriptConflict } from '@/services/scriptConflict'
 import type { QuillDelta } from '@/services/localDraft'
+import { localDraftService } from '@/services/localDraft'
 
 export const useSessionStore = defineStore('sessionStore', {
   state: () => ({
@@ -162,6 +163,16 @@ export const useSessionStore = defineStore('sessionStore', {
         // Clear active session if it was deleted
         if (this.activeSession?.id === id) {
           this.activeSession = null
+        }
+
+        // Forget what this browser kept for it. Best-effort: the session is
+        // already gone on the server, so a failure here must not undo that.
+        delete this.scriptVersions[id]
+        if (this.conflictSessionId === id) this.conflictSessionId = null
+        try {
+          await localDraftService.delete(id)
+        } catch (e) {
+          console.warn(`[sessionStore] could not clear local draft for deleted session ${id}:`, e)
         }
 
         this.setSuccess('Session deleted successfully')
