@@ -3,19 +3,18 @@
       v-if="beatUrl"
       class="fixed bottom-0 left-0 right-0 bg-surface-elevated border-t border-slate-700 p-4 shadow-2xl flex flex-col gap-2 transition-all z-40"
   >
-    <!-- Loading and Error States -->
-    <div v-if="isLoading" class="text-center text-amber-500">
-      Loading audio...
-    </div>
+    <!-- Error State -->
     <div v-if="loadError" class="text-center text-red-400 text-sm">
       {{ loadError }}
     </div>
 
-    <!-- Main Player UI -->
-    <div v-if="!isLoading && !loadError">
+    <!-- Main Player UI. Rendered while the audio loads too (controls disabled),
+         so the bar keeps its height instead of growing from a one-line message. -->
+    <div v-else :aria-busy="isLoading">
       <div class="flex justify-between items-center">
         <span class="text-sm font-medium text-slate-100">{{ filename }}</span>
-        <span class="text-xs text-slate-400">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
+        <span v-if="isLoading" class="text-xs text-amber-500" role="status">Loading beat…</span>
+        <span v-else class="text-xs text-slate-400">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
       </div>
 
       <!-- Progress Bar -->
@@ -32,12 +31,12 @@
 
       <!-- Controls -->
       <div class="flex gap-2 items-center flex-wrap">
-        <button @click="skip(-5)" :disabled="!sound" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">-5s</button>
-        <button @click="togglePlay" :disabled="!sound || duration === 0" class="px-4 py-1.5 bg-amber-500 text-black rounded-lg text-sm font-medium hover:bg-amber-400 disabled:opacity-40 transition-colors">
+        <button @click="skip(-5)" :disabled="!canControl" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">-5s</button>
+        <button @click="togglePlay" :disabled="!canControl || duration === 0" class="px-4 py-1.5 bg-amber-500 text-black rounded-lg text-sm font-medium hover:bg-amber-400 disabled:opacity-40 transition-colors">
           {{ isPlaying ? 'Pause' : 'Play' }}
         </button>
-        <button @click="skip(5)" :disabled="!sound" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">+5s</button>
-        <button @click="toggleLoop" :disabled="!sound" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+        <button @click="skip(5)" :disabled="!canControl" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">+5s</button>
+        <button @click="toggleLoop" :disabled="!canControl" class="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-sm hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
           {{ isLooping ? 'Loop ∞' : 'Loop Off' }}
         </button>
 
@@ -100,6 +99,8 @@ const currentTime = ref(0)
 const duration = ref(0)
 const updateInterval = ref<number | null>(null)
 const isLoading = ref(false)
+/** The Howl exists as soon as loading starts; controls wait for the audio. */
+const canControl = computed(() => !!sound.value && !isLoading.value)
 const loadError = ref<string | null>(null)
 const volume = ref(props.initialVolume ?? 0.8)
 

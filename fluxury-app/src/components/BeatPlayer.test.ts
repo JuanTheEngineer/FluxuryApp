@@ -256,3 +256,35 @@ describe('BeatPlayer enhancements', () => {
     })
   })
 })
+
+describe('BeatPlayer while the audio loads', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    MockedHowl.mockClear()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('keeps the full player layout (no height jump) with controls disabled', async () => {
+    // Mount without advancing timers: the mocked onload hasn't fired yet
+    const w = mount(BeatPlayer, { props: { beatUrl: '/beats/test.wav' } })
+    await nextTick()
+
+    expect(w.text()).toContain('Loading beat…')
+    expect(w.text()).not.toContain('Loading audio')
+    const buttons = w.findAll('button')
+    expect(buttons.map((b) => b.text())).toEqual(expect.arrayContaining(['-5s', 'Play', '+5s']))
+    expect(buttons.every((b) => b.attributes('disabled') !== undefined)).toBe(true)
+    expect(w.findAll('input[type="range"]')).toHaveLength(2)
+  })
+
+  it('enables the controls once the audio has loaded', async () => {
+    const w = mount(BeatPlayer, { props: { beatUrl: '/beats/test.wav' } })
+    vi.advanceTimersByTime(1)
+    await flushPromises()
+    await nextTick()
+
+    expect(w.text()).not.toContain('Loading beat…')
+    const play = w.findAll('button').find((b) => b.text() === 'Play')!
+    expect(play.attributes('disabled')).toBeUndefined()
+  })
+})
