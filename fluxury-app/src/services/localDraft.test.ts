@@ -28,6 +28,14 @@ describe('LocalDraftService - IndexedDB path', () => {
     service = await createFreshService()
   })
 
+  it('stores drafts built from Vue reactive state (regression: DataCloneError)', async () => {
+    const { reactive } = await import('vue')
+    // useAutosave passes the delta straight out of a ref, i.e. a Proxy
+    const draft = { ...makeDraft('reactive-1'), delta: reactive({ ops: [{ insert: 'bars\n' }] }) }
+    await service.set(draft)
+    expect((await service.get('reactive-1'))?.delta).toEqual({ ops: [{ insert: 'bars\n' }] })
+  })
+
   it('returns null for a non-existent draft', async () => {
     const result = await service.get('non-existent-session')
     expect(result).toBeNull()

@@ -127,14 +127,20 @@ class LocalDraftServiceImpl implements LocalDraftService {
   /**
    * Persists a draft. Handles localStorage quota exceeded by evicting the
    * oldest draft for a different session.
+   *
+   * Stores a plain JSON snapshot. Callers pass Vue reactive state (the delta
+   * lives in a ref), and IndexedDB's structured clone throws DataCloneError on
+   * a Proxy, which silently disabled every IndexedDB draft write until
+   * 2026-11-16. Snapshotting here also stops later mutations leaking in.
    */
   async set(draft: LocalDraft): Promise<void> {
     await this._ensureInit()
+    const snapshot: LocalDraft = JSON.parse(JSON.stringify(draft))
 
     if (this._idbAvailable && this._db) {
-      return this._idbSet(draft)
+      return this._idbSet(snapshot)
     }
-    return this._lsSet(draft)
+    return this._lsSet(snapshot)
   }
 
   /**
