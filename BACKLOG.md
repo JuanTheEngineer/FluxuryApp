@@ -54,6 +54,10 @@ Same code path: what happens between opening a session and the editor being read
 
 ---
 
+## P2 — Batch G: Autosave cost at scale
+
+- [ ] **Autosave writes to the server far more than it needs to**: every save is an S3 `PUT` plus a DynamoDB `UpdateItem`, fired after each 1.5s typing pause and at least every 15s while typing. At ~360 saves per hour of writing that's roughly $0.06–0.11 per active user per month in request fees, which dwarfs versioning storage. Options: a longer server debounce (the local draft already protects every keystroke within 500ms), skip saves when content is unchanged, or skip the DynamoDB update when only the script changed. Worth doing before real user growth, not now. *(estimated 2026-11-16)*
+
 ## P2 — Batch C: Environments and CI
 
 Stop testing on the only environment, which users also use.
