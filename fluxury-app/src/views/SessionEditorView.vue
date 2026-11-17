@@ -22,9 +22,27 @@
       <router-link to="/beats" class="text-amber-500 underline">Browse beats to start writing</router-link>
     </div>
 
-    <!-- Loading state -->
-    <div v-else-if="lifecycleState === 'loading'" class="text-center py-16">
-      <p class="text-slate-400">Loading session...</p>
+    <!-- Opening: a skeleton shaped like the editor, from the very first frame, so
+         nothing flashes empty and nothing moves when the session arrives -->
+    <div
+      v-else-if="isOpening"
+      data-testid="session-skeleton"
+      aria-busy="true"
+      class="animate-pulse motion-reduce:animate-none"
+    >
+      <span class="sr-only" role="status">Loading session</span>
+      <div class="flex items-center gap-2 mb-2" aria-hidden="true">
+        <div class="h-7 w-48 rounded-md bg-slate-700/60" />
+        <div class="ml-auto w-10 h-10 rounded-full bg-slate-700/40" />
+      </div>
+      <div class="bg-surface-elevated border border-slate-700 rounded-lg mt-2 min-h-[50vh] overflow-hidden" aria-hidden="true">
+        <div class="h-[42px] border-b border-slate-700 flex items-center gap-3 px-3">
+          <div v-for="i in 5" :key="i" class="h-4 w-4 rounded bg-slate-700/60" />
+        </div>
+        <div class="p-4 space-y-3">
+          <div v-for="(width, i) in skeletonLineWidths" :key="i" class="h-4 rounded bg-slate-700/50" :style="{ width }" />
+        </div>
+      </div>
     </div>
 
     <!-- Editor (ready/editing/saving/saved states) -->
@@ -90,8 +108,8 @@
         </div>
       </div>
 
-      <!-- No beat indicator -->
-      <div v-if="!sessionBeatUrl" class="bg-slate-800/50 border border-slate-700 border-dashed rounded-lg px-3 py-2 mb-3 text-sm text-slate-400 flex items-center gap-2">
+      <!-- No beat indicator: only once we know (see beatStatus) -->
+      <div v-if="beatStatus === 'none'" class="bg-slate-800/50 border border-slate-700 border-dashed rounded-lg px-3 py-2 mb-3 text-sm text-slate-400 flex items-center gap-2">
         <span>🎵</span>
         <span>No beat selected</span>
         <router-link v-if="authStore.isAuthenticated" to="/beats" class="text-amber-500 hover:text-amber-400 ml-auto text-xs">
@@ -152,8 +170,11 @@
       </div>
     </div>
 
-    <!-- Beat Player -->
+    <!-- Beat Player: mounted once the beat is known. Until then a same-size
+         placeholder, so the bar doesn't flash "No Song Selected" or change height.
+         No bar at all for a session without a beat (the banner above says so). -->
     <BeatPlayer
+      v-if="beatStatus === 'ready'"
       :beatUrl="sessionBeatUrl"
       :initialPosition="resumeState?.beatPlaybackPosition"
       :initialVolume="resumeState?.beatVolume"
@@ -161,6 +182,25 @@
       @beat-audible="onBeatAudible"
       @update:playbackState="onPlaybackStateUpdate"
     />
+    <div
+      v-else-if="beatStatus === 'unknown' && lifecycleState !== 'error' && route.params.id"
+      data-testid="player-skeleton"
+      aria-hidden="true"
+      class="fixed bottom-0 left-0 right-0 bg-surface-elevated border-t border-slate-700 p-4 shadow-2xl flex flex-col gap-2 z-40 animate-pulse motion-reduce:animate-none"
+    >
+      <div class="flex justify-between items-center">
+        <div class="h-4 w-32 rounded bg-slate-700/60" />
+        <div class="h-3 w-16 rounded bg-slate-700/50" />
+      </div>
+      <div class="h-1.5 w-full rounded bg-slate-700/60" />
+      <div class="flex gap-2">
+        <div class="h-8 w-11 rounded-lg bg-slate-700/60" />
+        <div class="h-8 w-14 rounded-lg bg-slate-700/60" />
+        <div class="h-8 w-11 rounded-lg bg-slate-700/60" />
+        <div class="h-8 w-16 rounded-lg bg-slate-700/60" />
+      </div>
+      <div class="h-1.5 w-full rounded bg-slate-700/50" />
+    </div>
   </div>
 </template>
 
@@ -213,12 +253,37 @@ const titleInput = ref<HTMLInputElement>()
 const latestPlaybackState = ref<{ position: number; volume: number; looping: boolean } | null>(null)
 
 // Resolve beat audio URL from beat store by beatId
+// GetSessionResponseContent lacks beatId (BACKLOG Batch D, one API contract):
+// read it in this one place.
+const sessionBeatId = computed(() => (session.value as { beatId?: string } | null)?.beatId)
+
 const sessionBeatUrl = computed(() => {
-  const beatId = session.value?.beatId
+  const beatId = sessionBeatId.value
   if (!beatId) return session.value?.beatUrl || '' // Legacy fallback
   const beat = beatStore.beats.find((b: any) => b.id === beatId)
   return beat?.path || ''
 })
+
+// --- Opening without flashes ---
+
+// The beat list loads in parallel with the session (onMounted). Until it
+// settles, "this session's beat" and "no beat" look the same.
+const beatsLoaded = ref(false)
+
+/** 'unknown' until we can tell; drives the banner and the player area. */
+const beatStatus = computed<'unknown' | 'none' | 'ready'>(() => {
+  if (!session.value) return 'unknown'
+  if (sessionBeatUrl.value) return 'ready'
+  if (sessionBeatId.value && !beatsLoaded.value) return 'unknown'
+  return 'none' // no beat, or its beat no longer exists
+})
+
+// The lifecycle starts 'idle' and only becomes 'loading' inside loadSession,
+// so treat "idle with a session id" as opening too: skeleton from frame one.
+const isOpening = computed(() =>
+  lifecycleState.value === 'loading' || (lifecycleState.value === 'idle' && !!route.params.id),
+)
+const skeletonLineWidths = ['35%', '80%', '72%', '86%', '64%', '0%', '30%', '78%', '70%']
 
 // Autosave integration
 const { saveStatus, lastSavedAt, flush, destroy: destroyAutosave } = useAutosave({
@@ -465,9 +530,11 @@ function deleteThisSession() {
 }
 
 onMounted(async () => {
-  await beatStore.fetchBeats()
-  await loadSession()
   document.addEventListener('keydown', handleKeydown)
+  // In parallel: the lyrics never wait for the beat list (fetchBeats handles
+  // its own errors; a failure just means the beat shows as missing).
+  const beats = beatStore.fetchBeats().catch(() => {}).finally(() => { beatsLoaded.value = true })
+  await Promise.all([beats, loadSession()])
 })
 
 onUnmounted(() => {

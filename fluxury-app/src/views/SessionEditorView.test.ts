@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { nextTick, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import Quill from 'quill'
 
 // --- Mocks ---
@@ -53,7 +53,11 @@ vi.mock('@/stores/sessionStore', () => ({
     conflictSessionId: null,
     saveScript: vi.fn().mockResolvedValue('url'), get activeSession() { return mockActiveSessionValue } }),
 }))
-vi.mock('@/stores/beatStore', () => ({ useBeatStore: () => ({ fetchBeats: vi.fn().mockResolvedValue([]) }) }))
+const mockBeatStore = reactive({
+  beats: [] as Array<{ id: string; path: string }>,
+  fetchBeats: vi.fn().mockResolvedValue(undefined),
+})
+vi.mock('@/stores/beatStore', () => ({ useBeatStore: () => mockBeatStore }))
 
 import SessionEditorView from './SessionEditorView.vue'
 import { useAuthStore } from '@/stores/authStore'
@@ -206,5 +210,112 @@ describe('SessionEditorView: session options menu (delete)', () => {
     const w = await mountSignedIn(false)
     expect(w.find('[data-testid="session-menu"]').exists()).toBe(false)
     w.unmount()
+  })
+})
+
+describe('SessionEditorView: opening a session (no flash of empty or wrong content)', () => {
+  /** A promise the test resolves by hand, to hold the UI in its loading state. */
+  function deferred<T = void>() {
+    let resolve!: (v: T) => void
+    const promise = new Promise<T>((r) => { resolve = r })
+    return { promise, resolve }
+  }
+
+  const settle = async () => { await flushPromises(); await nextTick(); await flushPromises(); await nextTick() }
+  const mountEditor = async () => {
+    const w = mount(SessionEditorView, { global: { stubs: { RouterLink: true } } })
+    await settle()
+    return w
+  }
+  const loadsAs = (s: Record<string, unknown>) => mockLoadSession.mockImplementation(async () => {
+    mockActiveSessionValue = { id: 'session-1', name: 'Verse one', script: null, ...s }
+  })
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockIsOnline.value = true
+    mockLocalDraftGet.mockResolvedValue(null)
+    mockRoute.params = { id: 'session-1' }
+    mockActiveSessionValue = null
+    mockLoadSession.mockReset()
+    mockBeatStore.beats = []
+    mockBeatStore.fetchBeats.mockReset().mockResolvedValue(undefined)
+    MockedQuill.mockClear()
+  })
+
+  it('the very first render is the skeleton (before onMounted has started loading)', () => {
+    mockLoadSession.mockReturnValue(deferred().promise)
+    const w = mount(SessionEditorView, { global: { stubs: { RouterLink: true } } })
+
+    // Synchronously after mount: the DOM is still the initial render.
+    expect(w.find('[data-testid="session-skeleton"]').exists()).toBe(true)
+    expect(w.find('[data-testid="script-editor"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('shows a skeleton of the editor, never an empty editor, until the session arrives', async () => {
+    const pending = deferred()
+    mockLoadSession.mockImplementation(async () => {
+      await pending.promise
+      mockActiveSessionValue = { id: 'session-1', name: 'Verse one', script: null }
+    })
+    const w = await mountEditor()
+
+    expect(w.find('[data-testid="session-skeleton"]').exists()).toBe(true)
+    expect(w.find('[data-testid="session-skeleton"]').attributes('aria-busy')).toBe('true')
+    expect(w.find('[data-testid="script-editor"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('No beat selected')
+    expect(w.text()).not.toContain('No Song Selected')
+
+    pending.resolve()
+    await settle()
+    expect(w.find('[data-testid="session-skeleton"]').exists()).toBe(false)
+    expect(w.find('[data-testid="script-editor"]').exists()).toBe(true)
+    expect(w.text()).toContain('Verse one')
+  })
+
+  it('starts loading the session without waiting for the beat list', async () => {
+    mockBeatStore.fetchBeats.mockReturnValue(deferred().promise) // never resolves
+    loadsAs({})
+    const w = await mountEditor()
+
+    expect(mockLoadSession).toHaveBeenCalledWith('session-1')
+    expect(w.find('[data-testid="script-editor"]').exists()).toBe(true)
+  })
+
+  it('while the beat list loads, a session with a beat shows a player placeholder, not "No beat"', async () => {
+    const beats = deferred()
+    mockBeatStore.fetchBeats.mockReturnValue(beats.promise)
+    loadsAs({ beatId: 'beat-1' })
+    const w = await mountEditor()
+
+    expect(w.find('[data-testid="player-skeleton"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('No beat selected')
+    expect(w.text()).not.toContain('No Song Selected')
+
+    mockBeatStore.beats = [{ id: 'beat-1', path: '/beats/beat-1.wav' }]
+    beats.resolve()
+    await settle()
+    expect(w.find('[data-testid="player-skeleton"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('No beat selected')
+  })
+
+  it('a session without a beat says so straight away, with no empty player bar', async () => {
+    mockBeatStore.fetchBeats.mockReturnValue(deferred().promise) // irrelevant: no beat to look up
+    loadsAs({})
+    const w = await mountEditor()
+
+    expect(w.text()).toContain('No beat selected')
+    expect(w.find('[data-testid="player-skeleton"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('No Song Selected')
+  })
+
+  it('a beat that no longer exists counts as no beat once the list has loaded', async () => {
+    mockBeatStore.beats = [{ id: 'other', path: '/beats/other.wav' }]
+    loadsAs({ beatId: 'deleted-beat' })
+    const w = await mountEditor()
+
+    expect(w.find('[data-testid="player-skeleton"]').exists()).toBe(false)
+    expect(w.text()).toContain('No beat selected')
   })
 })
