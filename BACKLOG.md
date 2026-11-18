@@ -40,7 +40,7 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ## Release 1.1 — Writing flow fixes from testing (small, ship before Release 2)
 
-- [~] **Turn autocorrect off in the lyrics editor, keep suggestions** (S) *(requested 2026-11-18)*: `autocorrect="off"` on Quill's editable element; spellcheck left on so the suggestion bar stays (`60eec91`). Checked on the real editor in a browser. *(needs `./deploy.sh frontend`, then a test on Juan's iPhone)*. Still open after the device test: Android (Gboard ignores `autocorrect`; turning it off there may need `spellcheck="false"`), the red underlines, and `autocapitalize`.
+- [~] **Turn autocorrect off in the lyrics editor, keep suggestions** (S) *(requested 2026-11-18)*: `autocorrect="off"` on Quill's editable element; spellcheck left on so the suggestion bar stays (`60eec91`). Checked on the real editor in a browser. Deployed 2026-11-18 (live bundle checked, beta test passed). *(needs a test on Juan's iPhone)*. Still open after the device test: Android (Gboard ignores `autocorrect`; turning it off there may need `spellcheck="false"`), the red underlines, and `autocapitalize`.
 
 ---
 
