@@ -7,6 +7,7 @@ import Quill from 'quill'
 // --- Mocks ---
 vi.mock('quill', () => ({
   default: vi.fn().mockImplementation(() => ({
+    root: document.createElement('div'), // Quill's contenteditable element
     setContents: vi.fn(), getContents: vi.fn(() => ({ ops: [{ insert: 'test\n' }] })),
     setSelection: vi.fn(), getLength: vi.fn(() => 5), focus: vi.fn(), on: vi.fn(), disable: vi.fn(), enable: vi.fn(),
   })),
@@ -371,5 +372,30 @@ describe('SessionEditorView: the space bar works everywhere', () => {
     const w = await mountSignedIn()
     expect(spaceIsBlocked(w.find('[data-testid="session-menu"]').element)).toBe(false)
     w.unmount()
+  })
+})
+
+describe('SessionEditorView: keyboard for writing lyrics', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockIsOnline.value = true
+    mockLocalDraftGet.mockResolvedValue(null)
+    mockRoute.params = { id: 'session-1' }
+    mockBeatStore.fetchBeats.mockReset().mockResolvedValue(undefined)
+    MockedQuill.mockClear()
+    mockLoadSession.mockReset().mockImplementation(async () => {
+      mockActiveSessionValue = { id: 'session-1', name: 'Verse one', script: null }
+    })
+  })
+
+  it('turns autocorrect off, so slang and deliberate spellings are not "fixed"', async () => {
+    useAuthStore().isAuthenticated = true
+    mount(SessionEditorView, { global: { stubs: { RouterLink: true } } })
+    await flushPromises(); await nextTick(); await flushPromises(); await nextTick()
+
+    const root: HTMLElement = (MockedQuill.mock.results[0]?.value as any).root
+    expect(root.getAttribute('autocorrect')).toBe('off')
+    // Suggestions stay: spellcheck isn't turned off (that may hide the suggestion bar)
+    expect(root.getAttribute('spellcheck')).not.toBe('false')
   })
 })

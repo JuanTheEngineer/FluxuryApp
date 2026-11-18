@@ -404,6 +404,12 @@ async function loadSession() {
       }
     })
 
+    // Lyrics keyboard: no autocorrect. Rap spelling is often deliberately
+    // "wrong" and auto-replacing words breaks the flow. Keyboard suggestions
+    // stay on: spellcheck is left alone because spellcheck="false" can also
+    // hide the iPhone's suggestion bar (BACKLOG Release 1.1: verify on device).
+    quill.value.root.setAttribute('autocorrect', 'off')
+
     // Set contents with selection disabled to prevent null offset crash
     // Quill 2.x fires selection-change during setContents which can crash on empty/complex deltas
     const safeDeltas = selectedDelta?.ops?.length > 0 ? selectedDelta : { ops: [{ insert: '\n' }] }

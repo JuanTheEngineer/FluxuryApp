@@ -66,6 +66,7 @@ vi.mock('@/services/api', async () => {
 // --- View-level mocks (same as SessionEditorView.test.ts) ---
 vi.mock('quill', () => ({
   default: vi.fn().mockImplementation(() => ({
+    root: document.createElement('div'),
     setContents: vi.fn(), getContents: vi.fn(() => ({ ops: [{ insert: 'x\n' }] })),
     setSelection: vi.fn(), getLength: vi.fn(() => 5), focus: vi.fn(), on: vi.fn(), disable: vi.fn(), enable: vi.fn(),
   })),

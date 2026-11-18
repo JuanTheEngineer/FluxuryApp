@@ -105,6 +105,7 @@ vi.mock('quill', () => ({
     }
     editors.push(editor)
     return {
+      root: document.createElement('div'),
       setContents: (delta: any) => { contents = delta; editor.shown = delta },
       getContents: () => contents,
       on: (evt: string, cb: () => void) => { handlers[evt] = cb },
