@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { fetchAuthSession } from 'aws-amplify/auth'
+import { loginHref } from '@/router/authGuard'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -47,8 +48,10 @@ export function createAuthenticatedClient() {
           }
         } catch (refreshError) {
           console.warn('[auth-interceptor] Token refresh failed, redirecting to login')
-          // Redirect to login
-          window.location.href = '/login'
+          // Full reload to the login page, coming back here after sign-in and
+          // saying why (the router guard can't run for an API call).
+          const here = window.location.pathname + window.location.search
+          window.location.href = loginHref(here, true)
           return Promise.reject(refreshError)
         }
       }

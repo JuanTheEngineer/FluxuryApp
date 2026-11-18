@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { authApi } from '@/services/api'
 import type { AuthUser } from '@/services/api'
+import { signInMarker } from '@/services/signInMarker'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -9,6 +10,8 @@ export const useAuthStore = defineStore('auth', {
     isLoading: false,
     authChecked: false,
     error: null as string | null,
+    /** Was signed in on this device, and that login has since expired. */
+    sessionExpired: false,
   }),
 
   actions: {
@@ -20,17 +23,29 @@ export const useAuthStore = defineStore('auth', {
           const userInfo = await authApi.getCurrentUser()
           this.user = userInfo
           this.isAuthenticated = true
+          this.sessionExpired = false
+          signInMarker.set()
         } else {
           this.user = null
           this.isAuthenticated = false
+          this.noteIfExpired()
         }
       } catch (error) {
         console.warn('Auth status check failed:', error)
         this.user = null
         this.isAuthenticated = false
+        this.noteIfExpired()
       } finally {
         this.isLoading = false
         this.authChecked = true
+      }
+    },
+
+    /** Signed out without signing out: the saved login expired or was revoked. */
+    noteIfExpired() {
+      if (signInMarker.isSet()) {
+        this.sessionExpired = true
+        signInMarker.clear() // say it once; the login page carries the message via ?reason=expired
       }
     },
 
@@ -95,6 +110,7 @@ export const useAuthStore = defineStore('auth', {
       this.isLoading = true
       try {
         await authApi.logout()
+        signInMarker.clear() // signing out on purpose isn't "expired"
         this.user = null
         this.isAuthenticated = false
         this.authChecked = false

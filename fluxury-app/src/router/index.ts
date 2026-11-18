@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import { authRedirect } from './authGuard'
 import DefaultLayout from "@/layouts/DefaultLayout.vue";
 import SessionBrowserView from "@/views/SessionBrowserView.vue";
 import SessionEditorView from "@/views/SessionEditorView.vue";
@@ -71,15 +72,11 @@ router.beforeEach(async (to, from, next) => {
         await authStore.checkAuthStatus()
     }
 
-    // Handle protected routes
-    if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-        next('/login')
-        return
-    }
-
-    // Handle guest-only routes (like login page)
-    if (to.meta.requiresGuest && authStore.isAuthenticated) {
-        next('/sessions')
+    // Signed-out visitors go to sign-in, remembering the page (and saying so
+    // if their login expired); signed-in visitors skip the sign-in page.
+    const redirect = authRedirect(to, authStore)
+    if (redirect) {
+        next(redirect)
         return
     }
 

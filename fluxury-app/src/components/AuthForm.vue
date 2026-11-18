@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import { afterSignIn } from '@/router/authGuard'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+
+/** Sent here because a saved login expired (see router/authGuard.ts). */
+const loginExpired = computed(() => route.query.reason === 'expired')
 
 const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true'
 
@@ -32,7 +37,8 @@ async function submit() {
   if (mode.value === 'signIn') {
     const result = await auth.login(username.value.trim(), password.value)
     if (result.success) {
-      await router.push('/sessions')
+      // replace: Back shouldn't return to the sign-in page
+      await router.replace(afterSignIn(route.query))
     } else {
       localError.value = result.error || 'Incorrect username or password'
     }
@@ -43,7 +49,7 @@ async function submit() {
       password.value
     )
     if (result.success && auth.isAuthenticated) {
-      await router.push('/sessions')
+      await router.replace(afterSignIn(route.query))
     } else {
       localError.value = result.error || 'Registration failed'
     }
@@ -72,6 +78,16 @@ function toggleMode() {
         <p v-if="isDemoMode" class="text-center text-sm text-amber-500 mb-4">
           Demo mode — any credentials will work
         </p>
+
+        <!-- Why you're here, when your saved login expired -->
+        <div
+          v-if="loginExpired && mode === 'signIn'"
+          role="status"
+          data-testid="login-expired"
+          class="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 mb-4"
+        >
+          <p class="text-sm text-amber-300">Your session expired. Sign in again to keep writing.</p>
+        </div>
 
         <!-- Error message -->
         <div v-if="displayError" class="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-4">
