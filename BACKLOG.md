@@ -30,6 +30,12 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ---
 
+## Release 1.1 — Writing flow fixes from testing (small, ship before Release 2)
+
+- [ ] **Turn autocorrect off in the lyrics editor, keep suggestions** (S) *(requested 2026-11-18)*: autocorrect breaks the writing flow, and rap spelling is often deliberately "wrong". Set `autocorrect="off"` on the Quill editor (`quill.root`). Open question, test on a real iPhone and Android before deciding: whether `spellcheck="false"` (no red underlines) also hides the keyboard's suggestion bar, which should stay. Also decide `autocapitalize` (sentence capitals at the start of each line, or off).
+
+---
+
 ## Release 2 — Ship safely (~1 day, enabler)
 
 **Goal:** stop testing on the only environment, which users also use, before the biggest UI change in Release 3.
@@ -50,7 +56,7 @@ In order (each step makes the next one possible):
 
 ## Release 3 — Looks like a product (~2–3 days)
 
-**Goal:** a writing screen you'd show people: a modern, mobile-first beat player and real artwork. Then invite 5–10 testers.
+**Goal:** a writing screen you'd show people: a modern, mobile-first beat player, bars linked to lyrics, and real artwork. Then invite 5–10 testers.
 **Done when:** the design is picked from mockups, every existing player feature still works, it's checked on a real phone, and testers are invited.
 
 Same code: `BeatPlayer.vue` and the images on beats and sessions (Batch E). *(artwork reported 2026-11-14; player redesign requested 2026-11-17)*
@@ -59,7 +65,19 @@ What already exists:
 - Beats have a `thumbnailUrl` field, and the beat browser list shows it when it's present.
 - Sessions have an `artworkUrl` field, and `S3Service.uploadArtwork()` exists, but no UI calls it.
 
-- [ ] **Design pass first** (S): 2–3 phone-sized mockups of the player and session cover art; pick a direction before any code.
+- [ ] **Design pass first** (S): 2–3 phone-sized mockups of the player, bars (below) and session cover art; pick a direction before any code. Bars change what the player shows (bar counter, beat dots, sections), so design them together.
+
+### Bars: every lyric line linked to a bar of the beat (Batch J, **the USP**) *(requested 2026-11-18)*
+
+A rap verse is counted in bars (4 beats each, 16 bars a verse, 8 a hook), and most rappers write one bar per line. Fluxury knows the beat, so it can show where each line falls and follow along as it plays.
+
+- [ ] **Spike: can we find the bars in a beat automatically?** (M, do first, go/no-go): run open-source beat and downbeat trackers (unverified candidates: madmom, Beat This!, Essentia/essentia.js, librosa for tempo) on the 6 beats; check by ear and on a timeline whether bar 1 and the tempo come out right. Expected trouble: intros without drums, half-time feel, swing.
+- [ ] **Store a bar grid per beat** (M): tempo, time of the first downbeat, and the list of downbeat times (handles tempo drift). Computed once when a beat is added; manual correction ("tap to set bar 1", nudge, tap tempo), because detection will sometimes be wrong.
+- [ ] **Bar numbers beside the lyrics** (M): line N = bar N by default, starting at a chosen bar (e.g. after a 4-bar intro). Works on a blank session: numbered empty bar slots you fill in, like a lined notebook. Inserting a line pushes the following bars down.
+- [ ] **Follow the beat while it plays** (M): highlight the current bar's line (or empty slot) and show 4 beat dots for where you are inside the bar. Works with no lyrics, partial lyrics and full lyrics. Must not move the cursor or yank the scroll while you type.
+- [ ] **Loop a section** (S): loop bars 9–16 to write a hook over it. Builds on the existing loop.
+- [ ] **Later: exceptions and tools** (L): pickups (a line starting before its bar), two lines per bar, instrumental gaps, section labels (Intro/Verse/Hook), syllables per bar, and AI "write bar 12" (Release 6).
+- Open questions for Juan: one bar per line, or sometimes two? Empty bars as visible numbered lines, or only in the margin? While playing, should the view follow the beat or stay where you're typing? Sessions without a beat: no bars, or a metronome at a chosen tempo?
 - [ ] **Player shows every real beat as "audio"** (S): it derives the name from the last segment of the beat URL, and in production that's always `.../audio.wav?<signature>`. Pass the beat's real name (and creator) into `BeatPlayer` instead. *(found 2026-11-17)*
 - [ ] **Redesign the beat player: modern and mobile-first** (L). It currently looks like a first-demo interface. Keep every existing feature:
   - play/pause, -5s / +5s, loop on/off, seek bar with elapsed/total time, volume
