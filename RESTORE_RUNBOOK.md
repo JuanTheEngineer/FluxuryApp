@@ -7,8 +7,8 @@ What to do when a writer's lyrics, sessions or account are lost, overwritten or 
 | Situation | Section | Drilled? |
 |---|---|---|
 | Lyrics overwritten or emptied, session still exists | [1](#1-lyrics-overwritten-or-lost) | ✅ 2026-11-17 (read-only) |
-| A session was deleted | [2](#2-a-session-was-deleted) | ⚠️ lyrics part yes, record part not yet |
-| The whole sessions table is damaged | [3](#3-the-sessions-table-is-damaged) | ❌ not yet |
+| A session was deleted | [2](#2-a-session-was-deleted) | ✅ lyrics 2026-11-17 (read-only); record: PITR restore drilled 2026-11-17, item copy-back not yet |
+| The whole sessions table is damaged | [3](#3-the-sessions-table-is-damaged) | ⚠️ PITR restore drilled 2026-11-17; copy-back not yet |
 | The stack was destroyed (`cdk destroy`) | [4](#4-the-stack-was-destroyed) | ❌ untested, rehearse on the dev stack |
 | A user account was deleted | [5](#5-user-accounts) | Can't be restored: prevention only |
 
@@ -185,4 +185,4 @@ echo "live: $(aws dynamodb scan --table-name "$T" --select COUNT --query Count -
 |---|---|---|
 | 2026-11-17 | Section 1a (read-only): recovered the last saved lyrics of deleted session `9e13aa09…` from S3 version history | ✅ `test bar 1794947687623 more`, correct `{ delta, editTimestamp }` format; live file correctly 404 |
 | 2026-11-17 | Setup commands (find by name, list deleted sessions) and the 1a preview loop, run verbatim | ✅ |
-| — | Record drill (PITR restore to a temporary table) | Not yet run |
+| 2026-11-17 | Record drill: PITR restore of `fluxury-beta-sessions-beta` (latest restorable time) into a temporary table, counts compared, temporary table deleted | ✅ live 3 / restored 3; temporary table confirmed gone. Restore took a few minutes |
