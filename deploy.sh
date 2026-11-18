@@ -50,7 +50,25 @@ deploy_infra() {
   echo -e "${GREEN}✅ Infrastructure deployed!${NC}"
 }
 
-case "${1:-frontend}" in
+usage() {
+  echo "Usage: ./deploy.sh [frontend|backend|all|infra]"
+  echo ""
+  echo "  frontend (default) — Build + upload frontend to S3/CloudFront"
+  echo "  backend            — Hotswap Lambda code (fast)"
+  echo "  all                — Backend + frontend"
+  echo "  infra              — Full CDK deploy + frontend (for new resources)"
+}
+
+MODE="${1:-frontend}"
+case "$MODE" in
+  frontend|fe|f|backend|be|b|all|a|infra|i) ;;
+  *) usage; exit 1 ;;
+esac
+
+# Ship only what's on origin/main: no uncommitted or unpushed code.
+"$ROOT_DIR/scripts/deploy-guard.sh" "$ROOT_DIR" || exit 1
+
+case "$MODE" in
   frontend|fe|f)
     deploy_frontend
     ;;
@@ -64,15 +82,6 @@ case "${1:-frontend}" in
   infra|i)
     deploy_infra
     deploy_frontend
-    ;;
-  *)
-    echo "Usage: ./deploy.sh [frontend|backend|all|infra]"
-    echo ""
-    echo "  frontend (default) — Build + upload frontend to S3/CloudFront"
-    echo "  backend            — Hotswap Lambda code (fast)"
-    echo "  all                — Backend + frontend"
-    echo "  infra              — Full CDK deploy + frontend (for new resources)"
-    exit 1
     ;;
 esac
 
