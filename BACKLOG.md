@@ -1,11 +1,19 @@
 # Fluxury Release Plan
 
-Organized by release. Each release has a goal and an exit criterion; within a release, items are listed in the order to do them. Batch letters (A–I) are kept so older commits and notes still line up.
+Organized by release. Each release has a goal and an exit criterion; within a release, items are listed in the order to do them. Batch letters (A–J) are kept so older commits and notes still line up.
 Kiro keeps this file up to date as new issues come up in chat.
 
-**Blocking right now:** nothing. **Release 1 shipped as v0.1.0-beta on 2026-11-18.** Next up: Release 2 (dev stack + CI).
+**Blocking right now:** nothing. **Release 1 shipped as v0.1.0-beta on 2026-11-18.** First tester invited (2026-11-18).
 
-**Why this order:** first make the beta safe to hand to someone else, then stop testing on the environment users use, then make it look like a product and invite testers, then let their feedback decide what's next. Voice and AI come once the core is stable.
+**Next up, in order** (re-sorted 2026-11-18 after testing):
+1. **Autocorrect off in the editor** (Release 1.1, S): quick fix testers feel on every line. Ship, then test on a real iPhone.
+2. **Bars spike** (Release 3 / Batch J, M): can beat trackers find bar 1 and the tempo in our 6 beats? Offline, touches nothing live. Decides how the bars feature is designed.
+3. **CI step 1** (Release 2, M): tests on every push, no AWS access needed. (Clean builds, the step before it, is done.)
+4. **Player + bars + artwork mockups** (Release 3, S): one design pass, after Juan answers the four bar questions in Batch J.
+5. **Dev stack, then CI step 2** (Release 2, L).
+6. **Change and reset password in the app** (Release 4): before inviting more than ~5 testers.
+
+**Why this order:** first make the beta safe to hand to someone else, then stop testing on the environment users use, then make it look like a product and invite testers, then let their feedback decide what's next. Voice and AI come once the core is stable. Exception: small fixes from real testing (Release 1.1) and the bars spike jump ahead, because they're cheap and answer the biggest product question.
 
 ---
 
