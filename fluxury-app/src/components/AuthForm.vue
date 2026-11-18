@@ -140,13 +140,17 @@ function toggleMode() {
           </button>
         </form>
 
+        <!-- Demo mode can "sign up" (any credentials work). For real, accounts
+             are created by an admin during the beta: scripts/create-tester.sh -->
         <button
+          v-if="isDemoMode"
           type="button"
           class="mt-4 w-full text-sm text-slate-400 hover:text-amber-500 transition-colors"
           @click="toggleMode"
         >
           {{ mode === 'signIn' ? "Don't have an account? Sign up" : 'Already have an account? Sign in' }}
         </button>
+        <p v-else data-testid="invite-only" class="mt-4 text-center text-sm text-slate-400">Fluxury is invite-only during the beta. Ask the person who invited you for an account.</p>
       </div>
     </div>
   </div>

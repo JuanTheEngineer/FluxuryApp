@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { reactive } from 'vue'
 
@@ -61,5 +61,30 @@ describe('AuthForm', () => {
     const w = mount(AuthForm)
     await signIn(w)
     expect(replace).toHaveBeenCalledWith('/sessions')
+  })
+})
+
+describe('AuthForm in real mode: accounts are created by an admin (beta)', () => {
+  async function mountReal() {
+    vi.stubEnv('VITE_DEMO_MODE', 'false') // vitest pins demo mode; this form reads it at load
+    vi.resetModules()
+    const { default: RealAuthForm } = await import('./AuthForm.vue')
+    return mount(RealAuthForm)
+  }
+
+  beforeEach(() => { route.query = {} })
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  it('offers no way to sign up (it would only fail)', async () => {
+    const w = await mountReal()
+    expect(w.text()).not.toMatch(/sign up/i)
+    expect(w.text()).not.toMatch(/create (your fluxury )?account/i)
+  })
+
+  it('says how to get an account', async () => {
+    const w = await mountReal()
+    expect(w.find('[data-testid="invite-only"]').text()).toBe(
+      'Fluxury is invite-only during the beta. Ask the person who invited you for an account.',
+    )
   })
 })
