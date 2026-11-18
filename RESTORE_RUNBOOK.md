@@ -21,9 +21,9 @@ What to do when a writer's lyrics, sessions or account are lost, overwritten or 
 | Lyrics (`sessions/<id>/script.json`), artwork, beat audio | S3 `fluxury-beta-files-728861022483-us-east-1` | Versioning: every save and delete keeps the previous version | Old versions kept **30 days**, then expire |
 | Session records (name, beat, owner, pointer to lyrics) | DynamoDB `fluxury-beta-sessions-beta` | Point-in-time recovery (PITR) | Any second in the last **35 days** (enabled 2026-11-16 22:51 EST) |
 | Beat records | DynamoDB `fluxury-beta-beats-beta` | PITR | 35 days |
-| User accounts | Cognito user pool `us-east-1_kuWjspRvn` (`fluxury-beta-users`) | `Retain` on stack delete only | **No backup exists** |
+| User accounts | Cognito user pool `us-east-1_kuWjspRvn` (`fluxury-beta-users`) | `Retain` on stack delete + deletion protection | **No backup exists** |
 
-All four are `Retain` in CloudFormation: deleting or replacing the stack leaves them in place. A one-off local copy of the files bucket from 2026-11-17 is in `~/fluxury-backups/files-2026-11-17`.
+All four are `Retain` in CloudFormation: deleting or replacing the stack leaves them in place. The user pool and both tables also have **deletion protection**, which blocks deletes from the console, CLI or scripts; to delete one on purpose, turn its protection off first. A one-off local copy of the files bucket from 2026-11-17 is in `~/fluxury-backups/files-2026-11-17`.
 
 ---
 
@@ -161,7 +161,7 @@ Instead, put the existing resources back under the stack with `cdk import` (supp
 
 ## 5. User accounts
 
-Cognito has **no backup or restore** for user pools. A deleted pool, or a deleted user, is gone; exporting users can't include passwords, so everyone would have to reset. Protection is prevention only: the pool is `Retain` on stack deletion, and deletion protection is a planned next step (see BACKLOG).
+Cognito has **no backup or restore** for user pools. A deleted pool, or a deleted user, is gone; exporting users can't include passwords, so everyone would have to reset. Protection is prevention only: the pool is `Retain` on stack deletion and has deletion protection on. Deleting a single user is still possible (deletion protection covers the pool, not users), so treat `admin-delete-user` as irreversible.
 
 ---
 
