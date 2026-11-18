@@ -40,7 +40,7 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 ## Release 1.1 — Writing flow fixes from testing (small, ship before Release 2)
 
-- [ ] **Turn autocorrect off in the lyrics editor, keep suggestions** (S) *(requested 2026-11-18)*: autocorrect breaks the writing flow, and rap spelling is often deliberately "wrong". Set `autocorrect="off"` on the Quill editor (`quill.root`). Open question, test on a real iPhone and Android before deciding: whether `spellcheck="false"` (no red underlines) also hides the keyboard's suggestion bar, which should stay. Also decide `autocapitalize` (sentence capitals at the start of each line, or off).
+- [~] **Turn autocorrect off in the lyrics editor, keep suggestions** (S) *(requested 2026-11-18)*: `autocorrect="off"` on Quill's editable element; spellcheck left on so the suggestion bar stays (`60eec91`). Checked on the real editor in a browser. *(needs `./deploy.sh frontend`, then a test on Juan's iPhone)*. Still open after the device test: Android (Gboard ignores `autocorrect`; turning it off there may need `spellcheck="false"`), the red underlines, and `autocapitalize`.
 
 ---
 
