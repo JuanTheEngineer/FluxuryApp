@@ -32,6 +32,8 @@ vi.mock('@aws-sdk/client-s3', () => {
       const current = bucket.get(key)
       if (cmd instanceof PutObjectCommand) {
         const { IfMatch, IfNoneMatch } = cmd.input
+        // AWS: If-Match on a missing (or delete-marked) key is 404; on a different ETag, 412
+        if (IfMatch !== undefined && !current) throw Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } })
         if (IfMatch !== undefined && current?.etag !== IfMatch) throw preconditionFailed()
         if (IfNoneMatch === '*' && current) throw preconditionFailed()
         const etag = `"e${++etagCounter}"`
@@ -53,13 +55,18 @@ vi.mock('aws-amplify/auth', () => ({
 }))
 
 // --- Fake sessions API (stores fields verbatim, like the Lambda) ---
+const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { response: { status } })
 const sessionsDb = new Map<string, any>()
 vi.mock('@/services/api', async () => {
   const { S3Service } = await import('@/services/s3Service')
   return {
     sessionsApi: {
-      getSession: async (id: string) => ({ data: { ...sessionsDb.get(id) } }),
+      getSession: async (id: string) => {
+        if (!sessionsDb.has(id)) throw httpError(404)
+        return { data: { ...sessionsDb.get(id) } }
+      },
       updateSession: async (id: string, payload: any) => {
+        if (!sessionsDb.has(id)) throw httpError(403) // like the Lambda: condition userId = :owner fails
         sessionsDb.set(id, { ...sessionsDb.get(id), ...payload })
         return { data: sessionsDb.get(id) }
       },
@@ -83,6 +90,8 @@ vi.mock('@/services/api', async () => {
 // real structured-clone semantics, so it rejects what a browser rejects. ---
 import { IDBFactory } from 'fake-indexeddb'
 type Store = IDBFactory
+
+const routerReplace = vi.fn()
 
 // --- Quill fake that lets the test type ---
 let editors: Array<{ shown: any; type: (text: string) => void }> = []
@@ -110,7 +119,7 @@ vi.mock('howler', () => ({
     volume: vi.fn(() => 0.8), loop: vi.fn(() => true), duration: vi.fn(() => 200), playing: vi.fn(() => false), unload: vi.fn() })),
 }))
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { id: 'song-1' } }), useRouter: () => ({ push: vi.fn() }), onBeforeRouteLeave: vi.fn(),
+  useRoute: () => ({ params: { id: 'song-1' } }), useRouter: () => ({ push: vi.fn(), replace: routerReplace }), onBeforeRouteLeave: vi.fn(),
   RouterLink: { template: '<a><slot /></a>', props: ['to'] },
 }))
 vi.mock('@/composables/useConnectivity', async () => {
@@ -163,6 +172,8 @@ async function open(store: Store) {
       await settle(2500)
     },
     inConflict: () => wrapper.find('[data-testid="conflict-banner"]').exists(),
+    isDeletedHere: () => wrapper.find('[data-testid="deleted-banner"]').exists(),
+    savesStatusShown: () => wrapper.find('[data-testid="save-status"]').exists(),
     async click(testId: string) {
       await wrapper.find(`[data-testid="${testId}"]`).trigger('click')
       await settle(2500)
@@ -315,6 +326,60 @@ describe('Integration: one session open in many places', () => {
       expect(storedText('song-1')).toBe('from A')
       expect(b.inConflict()).toBe(true)
       a.close(); b.close()
+    })
+  })
+
+  describe('session deleted while open somewhere else', () => {
+    /** What deleting in another tab/device does: record gone, lyrics file deleted. */
+    function deleteElsewhere(id: string) {
+      sessionsDb.delete(id)
+      bucket.delete(`test-bucket/sessions/${id}/script.json`)
+    }
+
+    beforeEach(() => routerReplace.mockReset())
+
+    it('says so instead of "Save failed", and writes nothing more', async () => {
+      const laptop = await open(new IDBFactory())
+      await laptop.write('first bars')
+      deleteElsewhere('song-1')
+
+      await laptop.write('bars written after the delete')
+      expect(laptop.isDeletedHere()).toBe(true)
+      expect(laptop.savesStatusShown()).toBe(false)
+      expect(storedText('song-1')).toBeUndefined()
+
+      await laptop.write('even more bars')
+      expect(storedText('song-1')).toBeUndefined() // saving stays paused
+      laptop.close()
+    })
+
+    it('"Save as a new session" keeps the latest lyrics and opens the new session', async () => {
+      const laptop = await open(new IDBFactory())
+      await laptop.write('first bars')
+      deleteElsewhere('song-1')
+      await laptop.write('bars written after the delete')
+
+      await laptop.click('save-as-new')
+
+      const [newId] = [...sessionsDb.keys()]
+      expect(sessionsDb.get(newId).name).toBe('Song (restored)')
+      expect(storedText(newId)).toBe('bars written after the delete')
+      expect(routerReplace).toHaveBeenCalledWith(`/session/${newId}`)
+      expect(laptop.isDeletedHere()).toBe(false)
+      laptop.close()
+    })
+
+    it('also works for a session that never had lyrics saved (upload succeeds, record is gone)', async () => {
+      const phone = await open(new IDBFactory()) // nothing saved yet: first save uses If-None-Match
+      deleteElsewhere('song-1')
+
+      await phone.write('first bars ever')
+      expect(phone.isDeletedHere()).toBe(true)
+
+      await phone.click('save-as-new')
+      const newId = [...sessionsDb.keys()].find((k) => k !== 'song-1')!
+      expect(storedText(newId)).toBe('first bars ever')
+      phone.close()
     })
   })
 })

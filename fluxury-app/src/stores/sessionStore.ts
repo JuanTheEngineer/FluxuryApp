@@ -7,6 +7,7 @@ import type {
 import { sessionsApi, storageApi } from '@/services/api'
 import { encodeServerScript } from '@/services/resume'
 import { ScriptConflictError, isScriptConflict } from '@/services/scriptConflict'
+import { SessionDeletedError, httpStatusOf } from '@/services/sessionDeleted'
 import type { QuillDelta } from '@/services/localDraft'
 import { localDraftService } from '@/services/localDraft'
 
@@ -21,6 +22,8 @@ export const useSessionStore = defineStore('sessionStore', {
     scriptVersions: {} as Record<string, string | null>,
     /** Session whose saves are paused because another copy saved newer work. */
     conflictSessionId: null as string | null,
+    /** Session whose saves are paused because it was deleted somewhere else. */
+    deletedSessionId: null as string | null,
   }),
 
   getters: {
@@ -208,6 +211,7 @@ export const useSessionStore = defineStore('sessionStore', {
     /** Load the session's script, recording the version this copy is based on. */
     async loadScript(id: string, script: string | undefined): Promise<unknown> {
       if (this.conflictSessionId === id) this.conflictSessionId = null
+      if (this.deletedSessionId === id) this.deletedSessionId = null
       if (script?.startsWith('data:application/json;base64,')) {
         // Demo mode inlines the script; there is no version to compare against.
         delete this.scriptVersions[id]
@@ -231,9 +235,10 @@ export const useSessionStore = defineStore('sessionStore', {
     // Rethrows on failure: useAutosave treats a resolved promise as "saved",
     // so swallowing the error here made failed saves look successful.
     async saveScript(id: string, delta: unknown): Promise<string> {
-      // Saving is paused until the user resolves a conflict; this throws
-      // without a network call, so autosave retries can't overwrite anything.
+      // Saving is paused until the user resolves a conflict or a deletion; this
+      // throws without a network call, so autosave retries can't write anything.
       if (this.conflictSessionId === id) throw new ScriptConflictError(id)
+      if (this.deletedSessionId === id) throw new SessionDeletedError(id)
       try {
         const expected = id in this.scriptVersions ? this.scriptVersions[id] : undefined
         const { url: scriptUrl, version } = await storageApi.uploadSessionScript(
@@ -253,10 +258,65 @@ export const useSessionStore = defineStore('sessionStore', {
           this.conflictSessionId = id
           throw err
         }
+        if (await this.wasDeletedElsewhere(id, err)) {
+          this.deletedSessionId = id
+          throw new SessionDeletedError(id)
+        }
         const errorMessage = err.response?.data?.message || err.message || 'Failed to save script'
         this.setError(errorMessage)
         throw err
       }
+    },
+
+    /**
+     * After a failed save, did the failure happen because the session is gone?
+     * S3 answers 404 (If-Match on a deleted file); or the upload succeeds
+     * (If-None-Match ignores delete markers) and the API answers 403 because
+     * the record is missing. Only those statuses are worth one extra request,
+     * and only a definite 404 from the API counts as deleted.
+     */
+    async wasDeletedElsewhere(id: string, err: unknown): Promise<boolean> {
+      const status = httpStatusOf(err)
+      if (status !== 403 && status !== 404) return false
+      try {
+        await sessionsApi.getSession(id)
+        return false
+      } catch (probeErr) {
+        return httpStatusOf(probeErr) === 404
+      }
+    },
+
+    /** Create a new session holding these lyrics; returns its id. */
+    async createSessionWithLyrics(name: string, beatId: string | undefined, delta: QuillDelta): Promise<string> {
+      // CreateSessionRequestContent lacks beatId (BACKLOG Batch D, one API contract)
+      const created = await sessionsApi.createSession(
+        { name, ...(beatId ? { beatId } : {}) } as CreateSessionRequestContent,
+      )
+      const newId = created.data.id
+      const { url, version } = await storageApi.uploadSessionScript(newId, encodeServerScript(delta, Date.now()), null)
+      this.scriptVersions[newId] = version
+      await sessionsApi.updateSession(newId, { name, artworkUrl: '', script: url })
+      return newId
+    },
+
+    /**
+     * Deleted elsewhere: keep this copy's lyrics as a new "(restored)" session,
+     * with the same beat. Returns the new session so the editor can open it.
+     */
+    async saveDeletedAsNewSession(id: string, mine: QuillDelta): Promise<{ id: string; name: string }> {
+      const original = this.activeSession?.id === id ? this.activeSession : null
+      const name = `${original?.name || 'Untitled Session'} (restored)`
+      const beatId = (original as { beatId?: string } | null)?.beatId
+      const newId = await this.createSessionWithLyrics(name, beatId, mine)
+
+      this.deletedSessionId = null
+      delete this.scriptVersions[id]
+      try {
+        await localDraftService.delete(id) // its lyrics now live in the new session
+      } catch (e) {
+        console.warn(`[sessionStore] could not clear local draft for deleted session ${id}:`, e)
+      }
+      return { id: newId, name }
     },
 
     /** Conflict: overwrite the newer version with this copy's lyrics. */
@@ -277,13 +337,7 @@ export const useSessionStore = defineStore('sessionStore', {
       const original = this.activeSession?.id === id ? this.activeSession : null
       const copyName = `${original?.name || 'Untitled Session'} (my version)`
       const beatId = (original as { beatId?: string } | null)?.beatId
-      // CreateSessionRequestContent lacks beatId (BACKLOG Batch D, one API contract)
-      const created = await sessionsApi.createSession(
-        { name: copyName, ...(beatId ? { beatId } : {}) } as CreateSessionRequestContent,
-      )
-      const copyId = created.data.id
-      const { url } = await storageApi.uploadSessionScript(copyId, encodeServerScript(mine, Date.now()), null)
-      await sessionsApi.updateSession(copyId, { name: copyName, artworkUrl: '', script: url })
+      await this.createSessionWithLyrics(copyName, beatId, mine)
 
       const latest = await storageApi.downloadSessionScript(id)
       this.scriptVersions[id] = latest.version

@@ -117,6 +117,26 @@
         </router-link>
       </div>
 
+      <!-- Deleted elsewhere: nothing is saved until the user keeps the lyrics -->
+      <div
+        v-if="inDeleted"
+        role="alert"
+        data-testid="deleted-banner"
+        class="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 text-slate-100 p-3"
+      >
+        <p class="text-sm font-medium">This session was deleted in another tab or on another device.</p>
+        <p class="text-xs text-slate-400 mt-0.5">Your lyrics are still here. Save them as a new session to keep writing.</p>
+        <button
+          data-testid="save-as-new"
+          :disabled="restoringDeleted"
+          @click="saveAsNewSession"
+          class="mt-3 bg-amber-500 text-black px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors disabled:opacity-40"
+        >
+          {{ restoringDeleted ? 'Saving…' : 'Save as a new session' }}
+        </button>
+        <p v-if="restoreError" class="text-xs text-red-400 mt-2">{{ restoreError }}</p>
+      </div>
+
       <!-- Conflict: another copy saved newer work; nothing is saved until the user chooses -->
       <div
         v-if="inConflict"
@@ -160,7 +180,7 @@
 
       <!-- Save Status -->
       <SaveStatus
-        v-if="authStore.isAuthenticated && !inConflict"
+        v-if="authStore.isAuthenticated && !inConflict && !inDeleted"
         :status="saveStatus"
         :lastSavedAt="lastSavedAt"
         :onRetry="handleRetry"
@@ -441,6 +461,28 @@ function retryLoad() {
 
 function handleRetry() {
   flush()
+}
+
+// --- Deleted elsewhere (saving is paused) ---
+const inDeleted = computed(() => !!session.value && sessionStore.deletedSessionId === session.value.id)
+const restoringDeleted = ref(false)
+const restoreError = ref<string | null>(null)
+
+async function saveAsNewSession() {
+  if (!session.value || !quill.value) return
+  restoringDeleted.value = true
+  restoreError.value = null
+  try {
+    const mine = quill.value.getContents() as unknown as QuillDelta
+    const created = await sessionStore.saveDeletedAsNewSession(session.value.id, mine)
+    // replace: the deleted session's URL shouldn't stay in Back history
+    await router.replace(`/session/${created.id}`)
+  } catch (e) {
+    console.error('Failed to save lyrics as a new session:', e)
+    restoreError.value = "Couldn't reach the server. Your lyrics are still here; try again."
+  } finally {
+    restoringDeleted.value = false
+  }
 }
 
 // --- Conflict: another copy saved newer work (saving is paused) ---
