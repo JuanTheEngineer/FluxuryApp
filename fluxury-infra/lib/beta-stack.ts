@@ -85,7 +85,9 @@ export class BetaStack extends Stack {
         adminUserPassword: true,
       },
       preventUserExistenceErrors: true,
-      refreshTokenValidity: Duration.days(7),
+      // How long you stay signed in without opening the app (14 days, chosen
+      // 2026-11-17). See test/beta-stack.auth.test.ts.
+      refreshTokenValidity: Duration.days(14),
     })
 
     // Cognito Authorizer
