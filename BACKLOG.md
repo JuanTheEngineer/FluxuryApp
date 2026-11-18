@@ -35,12 +35,13 @@ Kiro keeps this file up to date as new issues come up in chat.
 **Goal:** stop testing on the only environment, which users also use, before the biggest UI change in Release 3.
 **Done when:** every push runs CI, and changes reach fluxury.app only after passing on a dev stack.
 
-- [ ] **Make the post-`cdk destroy` recovery real** (A, M): add a switch to synthesize only the four retained data resources (for `cdk import`), then rehearse `RESTORE_RUNBOOK.md` section 4 end to end on the dev stack. Today that section is untested.
+In order (each step makes the next one possible):
 
-- [ ] **Separate `dev` stack** (C, L): parameterize the CDK stack name and origins, deploy `FluxuryDev` next to `FluxuryBeta`.
-- [ ] **GitHub Actions CI** (C, L): typecheck, unit tests, CDK synth and assertion tests, then deploy to dev and run the beta test against it.
 - [ ] **Stop committing build output** (D, S): `fluxury-app/test-results/.last-run.json` is tracked even though `test-results/` is now gitignored; `git rm --cached` it.
 - [ ] **Stop committing build output (infra)** (D, S): `fluxury-infra/lib/*.js` next to the `.ts` files, `cdk.out`, `cookies.txt`. The stale `lib/beta-stack.js` made Jest test old code on 2026-11-14 (worked around via `moduleFileExtensions`). Delete the stale `.js` files. CI needs clean builds.
+- [ ] **GitHub Actions CI** (C, M): **step 1, no AWS access needed:** on every push run the frontend tests, infra tests, script tests and CDK synth; the typecheck may not exceed the current error count (25). **Step 2, after the dev stack:** deploy to dev and run the beta test there (needs an AWS role for GitHub: your OK).
+- [ ] **Separate `dev` stack** (C, L): parameterize the CDK stack name and origins, deploy `FluxuryDev` next to `FluxuryBeta`.
+- [ ] **Make the post-`cdk destroy` recovery real** (A, M): add a switch to synthesize only the four retained data resources (for `cdk import`), then rehearse `RESTORE_RUNBOOK.md` section 4 end to end on the dev stack. Today that section is untested.
 - [ ] **`tests/setup.ts` forces demo mode globally** (D, S): real-mode tests need a module reset to escape it. Fix before CI runs them on every push.
 - [ ] **Explain `deploy.sh` modes** (C, S): `all` hotswaps Lambdas only and skips infra changes like bucket CORS; `infra` is a full CDK deploy.
 
