@@ -3,7 +3,7 @@
 Organized by release. Each release has a goal and an exit criterion; within a release, items are listed in the order to do them. Batch letters (A–I) are kept so older commits and notes still line up.
 Kiro keeps this file up to date as new issues come up in chat.
 
-**Blocking right now:** nothing. Live site verified 2026-11-17 (save, reopen, conflicts, delete, opening without flashes).
+**Blocking right now:** nothing. **Release 1 shipped as v0.1.0-beta on 2026-11-18.** Next up: Release 2 (dev stack + CI).
 
 **Why this order:** first make the beta safe to hand to someone else, then stop testing on the environment users use, then make it look like a product and invite testers, then let their feedback decide what's next. Voice and AI come once the core is stable.
 
@@ -26,7 +26,7 @@ Kiro keeps this file up to date as new issues come up in chat.
 - [x] **Deploy guard** (C, S): `scripts/deploy-guard.sh` runs first in `deploy.sh`: on `main`, clean tree, no untracked files in deployed folders, no `.env.beta.local`, and HEAD = origin/main. Override for emergencies: `FLUXURY_DEPLOY_UNSAFE=1`. Tests: `scripts/test-deploy-guard.sh` (10/10). (`d132438`)
 - [x] **Orphaned files in S3** (F, S): deleted 2026-11-18 after review: 18 lyrics files left by beta test runs on Nov 17 (`test bar …`, 1,187 bytes) and `beats/beat-dQw4w9WgXcQ/audio.wav` (39 MB Rick Astley download test from June, no beat record). Recoverable for 30 days via versioning. 0 orphans left; 3 live sessions and 6 beats untouched.
 - [x] **New testers can't create an account** (B, S): decided 2026-11-18: **admin-only accounts for the beta.** The sign-in page no longer offers a sign-up that can't work and says the beta is invite-only (`2ff75b6`). Create accounts with `./scripts/create-tester.sh <username> <email>` (prints a password to send privately; `356de9b`).
-- [~] **Release v0.1.0-beta** (S): `RELEASE_NOTES.md` written; tag `v0.1.0-beta` created locally. *(push the tag after the deploy succeeds, then invite testers)*
+- [x] **Release v0.1.0-beta** (S): shipped 2026-11-18. Tag `v0.1.0-beta` on `f3ca18e` (deployed through the guard), `RELEASE_NOTES.md`. Verified live: sign-in page is invite-only, smoke check and beta test pass. **Release 1 complete.** Next: invite testers with `scripts/create-tester.sh`.
 
 ---
 
