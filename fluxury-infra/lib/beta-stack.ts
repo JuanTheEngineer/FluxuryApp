@@ -70,6 +70,9 @@ export class BetaStack extends Stack {
       accountRecovery: AccountRecovery.EMAIL_ONLY,
       // RETAIN: deleting or replacing the stack must never delete user accounts.
       removalPolicy: RemovalPolicy.RETAIN,
+      // Also blocks deletes from the console/CLI. Accounts have no backup:
+      // a deleted pool can't be restored (RESTORE_RUNBOOK.md section 5).
+      deletionProtection: true,
     })
 
     const userPoolClient = new UserPoolClient(this, 'FluxuryBetaUserClient', {
@@ -101,6 +104,8 @@ export class BetaStack extends Stack {
       // RETAIN: PITR lives inside the table, so it can't help if the table
       // itself is deleted with the stack.
       removalPolicy: RemovalPolicy.RETAIN,
+      // Also blocks deletes from the console/CLI.
+      deletionProtection: true,
     })
 
     // GSI: List sessions by owner, sorted by modified date
@@ -117,6 +122,7 @@ export class BetaStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
       removalPolicy: RemovalPolicy.RETAIN,
+      deletionProtection: true,
     })
 
     // S3 Bucket for File Storage

@@ -55,3 +55,25 @@ describe('User data survives stack deletion and replacement', () => {
     expect(targetsFiles).toBe(false)
   })
 })
+
+/**
+ * Retain only protects against CloudFormation. Deletion protection also blocks
+ * a delete from the console, the CLI or a script. User accounts have no backup
+ * at all (see RESTORE_RUNBOOK.md section 5), so the pool matters most.
+ */
+describe('Deletion protection outside CloudFormation', () => {
+  const t = template()
+
+  it('user pool (accounts) has deletion protection', () => {
+    const [, pool] = resource(t, 'AWS::Cognito::UserPool', 'FluxuryBetaUserPool')
+    expect(pool.Properties.DeletionProtection).toBe('ACTIVE')
+  })
+
+  it.each([
+    ['sessions table', 'FluxuryBetaSessionsV2'],
+    ['beats table', 'FluxuryBetaBeats'],
+  ])('%s has deletion protection', (_label, prefix) => {
+    const [, table] = resource(t, 'AWS::DynamoDB::Table', prefix)
+    expect(table.Properties.DeletionProtectionEnabled).toBe(true)
+  })
+})
