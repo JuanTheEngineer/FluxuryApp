@@ -15,7 +15,9 @@ Kiro keeps this file up to date as new issues come up in chat.
 **Done when:** every item below is checked, the beta test passes live, and you'd send the link to a friend.
 
 - [x] **Stack deletion no longer wipes user data** (A, M): sessions table, beats table, files bucket and the Cognito user pool are now `RETAIN`, and `autoDeleteObjects` is off for the files bucket (CDK 2.143.0's handler skips untagged buckets; the tag is removed before the custom resource is deleted, checked in the handler code and `cdk diff`). Frontend bucket stays `DESTROY` (rebuilt from git). (`fb86340`). Deployed 2026-11-17 after a local bucket backup (`~/fluxury-backups/files-2026-11-17`, 28 files); verified live: all 28 files and 46 versions intact, auto-delete tag and resource gone, CloudFormation shows `Retain` on all four, beta test passes. Side effect for the runbook: after a `cdk destroy`, the retained resources keep their fixed names, so a redeploy must import them instead of creating new ones.
-- [ ] **Write a restore runbook** (A, S): how to restore an old `script.json` version, and how to do a PITR restore of the sessions table. A backup nobody knows how to restore doesn't help much.
+- [x] **Write a restore runbook** (A, S): `RESTORE_RUNBOOK.md` covers overwritten lyrics, a deleted session, a damaged table, a destroyed stack and user accounts, with a drill log. Read-only commands run verbatim against the live beta, including recovering a deleted session's lyrics from S3 history. (`7a4243d`)
+- [ ] **Run the record drill once** (A, S, **you run it**: it creates and deletes a temporary DynamoDB table): the "Record drill" block in `RESTORE_RUNBOOK.md`. Proves PITR restore works; log the result in the drill log.
+- [ ] **Deletion protection on the user pool and both tables** (A, S): `Retain` only covers CloudFormation. A console click or script can still delete them, and user accounts have no backup at all. Cognito `deletionProtection` is currently `INACTIVE`.
 - [ ] **Investigate a `cognito-idp` 400 on page load** (B, S): it appears in the console on every open. Find out whether it's a harmless token-refresh miss or a real auth bug that could sign people out.
 - [ ] **Beat seeding** (S): confirm all 5 beats exist in the live backend. A new user with no beats has nothing to write to.
 - [ ] **Session deleted while open elsewhere** (F, S): a tab or device that still has it open gets a generic "Save failed" (S3 `If-Match` on a deleted file returns 404). Should say "This session was deleted" and offer to save the lyrics as a new session.
@@ -28,6 +30,8 @@ Kiro keeps this file up to date as new issues come up in chat.
 
 **Goal:** stop testing on the only environment, which users also use, before the biggest UI change in Release 3.
 **Done when:** every push runs CI, and changes reach fluxury.app only after passing on a dev stack.
+
+- [ ] **Make the post-`cdk destroy` recovery real** (A, M): add a switch to synthesize only the four retained data resources (for `cdk import`), then rehearse `RESTORE_RUNBOOK.md` section 4 end to end on the dev stack. Today that section is untested.
 
 - [ ] **Separate `dev` stack** (C, L): parameterize the CDK stack name and origins, deploy `FluxuryDev` next to `FluxuryBeta`.
 - [ ] **GitHub Actions CI** (C, L): typecheck, unit tests, CDK synth and assertion tests, then deploy to dev and run the beta test against it.
