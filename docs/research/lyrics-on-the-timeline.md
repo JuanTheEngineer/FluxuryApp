@@ -93,3 +93,44 @@ Decisions from Juan:
 - The loop icon looked like a restart button. Replace it with the standard repeat icon and a "LOOP" label.
 - The pin emoji is out. Use a drawn icon instead.
 - Bar and beat display: keep as is.
+
+## Decisions after the v5 review (2026-11-19)
+
+Juan's answers on the data model and the interface:
+- **Pin keeps its name.** The pin emoji is replaced by a drawn icon, loop uses the standard repeat icon, jump size is fixed at 2 bars, and there is no left-handed mirror setting. The bar and beat display stays as it is.
+- **Volume:** a speaker icon in the time row that shows muted or unmuted state. Tapping it opens a vertical slider. It closes on a tap outside or about 1.5 seconds after the last drag.
+- **No scrollbar on the lyrics list.** The strip shows the position. A half-visible last line signals that the list scrolls.
+- **The strip needs no "whole song" label.** A "drag to scrub" hint shows only until the first drag. The fallback name is "Song map" if testers get lost.
+- **Reordering:** typing never moves a line. Pinning or dragging a line moves it into time order among the placed lines, and Undo reverses that. Unplaced lines stay where they were typed.
+- **Sections: merged model.** Every section holds its own name, tempo, beats per bar and colour, and there is an "apply tempo to all sections" button. The split model (separate tempo list and label list) stays an option if testers find editing tedious.
+- **Limits:** 12 sections, and a warning at more than 4 tempo changes.
+- **Editor:** keep Quill. The fallback is a stored list of lines, each with its own text and time, only if the prototype below had failed.
+- **Data model:** a line's time in whole milliseconds is the only stored fact about placement. Bar, beat, line end and snapping are computed. Sections live in the session's `script.json`, so they inherit autosave, `If-Match` conflict detection and versioning.
+
+## Quill prototype results (2026-11-19)
+
+**Method.** A throwaway page in `fluxury-app/spikes/quill-line-time/` stores each line's time as a Quill block attribute (`time`, in milliseconds) and draws a side column of marks and section headings from each line's measured on-screen box. 13 browser tests in `fluxury-app/tests/spike/quill-line-time.spec.ts` run in Chromium with iPhone 13 emulation. Run them with `npx playwright test --config playwright.spike.config.ts`.
+
+**Results: 13 of 13 pass.**
+
+| Question | Result |
+|---|---|
+| Does the time survive save and load as JSON? | Yes. The time is stored as `{"insert":"\n","attributes":{"time":"8720"}}`, a string in the delta. |
+| Enter at the end, middle and start of a timed line | The time stays on exactly one line in all three. At the start, the new empty line above stays untimed. |
+| Pasting HTML that carries times | The times are dropped. A pasted line has no placement. |
+| Moving a line (up, and to the end) | Text and time travel together. Undoing both moves restores the document byte for byte. |
+| Pin, re-pin and unpin through a Quill format call | Works. |
+| Marks and headings aligned within 1 px of their lines | Yes, at 390x700, 320x560, landscape 700x390 and keyboard-open 390x330, scrolled to the top, middle and bottom, and while typing in a line that wraps. |
+| Backspace joining two timed lines (observed, not asserted) | The first line keeps its time, and the second line's time is lost silently. |
+
+**Bugs the tests caught, and fixes:**
+1. A moved line's newline looks the same as an Enter copy. Moves now use the `api` source, which the Enter fix ignores.
+2. Undo of a move was read as a paste and cleared the times. Paste handling moved into a clipboard matcher, and Enter is recognised only when one inserted newline carries a time and the next line holds the same time.
+3. The marks lagged one row (about 18 px) when measured immediately after a viewport resize. The real build must re-measure on the next animation frame after a resize.
+
+**Not covered:**
+- Real iPhone Safari (WebKit). Only Chromium was tested.
+- Phone keyboards that don't send Enter as a key event. The Enter fix reads the document change and not key events, so it should hold, but it isn't proven.
+- Quill's Delta format with very long lyrics, and the rest of the real editor (toolbar, autosave).
+
+**Recommendation.** Keep Quill. Verify on a real iPhone before building the real screen.
