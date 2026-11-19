@@ -23,6 +23,12 @@ A rapper loops a beat, finally gets a line down, and wants it saved at its place
 - Juan's review of v1/v2 (2026-11-18): v1 is the base. Keep the stack of lines, the top strip and the zoomed-in view ("I love that"). Keep v2's artwork and session title. "b6" was unclear: count bars inside each section ("Verse 1 · bar 2"). Doesn't like the word "stamp"; it's a placeholder name. Stamp's purpose wasn't clear in v2.
 - Bars per section *(Juan)*: don't assume 4 beats per bar. Each section has its own tempo and beats per bar, auto-detected where possible and settable by the user. A beat switch-up is handled by ending one section and starting another. Section colours are auto-assigned or picked by the user.
 - Open: work backwards from the **data model** before building anything, to make sure the UI is implementable (Juan, 2026-11-18).
+- Juan's review of v3 (2026-11-18). Mobile first: screen space and thumb reach matter. He reads the screen as 5 areas:
+  1. Session info: artwork, session name, beat name, and the producer in a faded font with a link (YouTube).
+  2. Whole-song strip ("very well designed"). The section pills shouldn't always show; open them on demand to check or add sections.
+  3. Zoomed-in view that follows the playhead. Easy to hide and show. Hidden, it must take little space but still be findable by someone who has never seen it.
+  4. Lyrics: lines always stay in time order. "Type your next line" is fine.
+  5. Playback: beat artwork as its background. Jump back/forward by bars instead of 5 seconds, plus scrubbing. Buttons must be high quality, modern and principled.
 
 ## Scope limits (Juan, 2026-11-18)
 
