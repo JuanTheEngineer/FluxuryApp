@@ -20,6 +20,9 @@ A rapper loops a beat, finally gets a line down, and wants it saved at its place
 - Playback highlights the current line.
 - Juan's worry (2026-11-18): too many numbers (timestamps, bar numbers) and the zoomed-in view may be too complex. Default view should hide numbers; the zoomed-in view is a later phase.
 - Mockup v1: rendered in the dashboard chat on 2026-11-18 (strip, 4-bar zoom, editor gutter, stamp button). Missing: room for artwork, dragging, phone versus laptop.
+- Juan's review of v1/v2 (2026-11-18): v1 is the base. Keep the stack of lines, the top strip and the zoomed-in view ("I love that"). Keep v2's artwork and session title. "b6" was unclear: count bars inside each section ("Verse 1 · bar 2"). Doesn't like the word "stamp"; it's a placeholder name. Stamp's purpose wasn't clear in v2.
+- Bars per section *(Juan)*: don't assume 4 beats per bar. Each section has its own tempo and beats per bar, auto-detected where possible and settable by the user. A beat switch-up is handled by ending one section and starting another. Section colours are auto-assigned or picked by the user.
+- Open: work backwards from the **data model** before building anything, to make sure the UI is implementable (Juan, 2026-11-18).
 
 ## Scope limits (Juan, 2026-11-18)
 
