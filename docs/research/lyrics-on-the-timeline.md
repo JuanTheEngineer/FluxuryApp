@@ -83,3 +83,13 @@ Follow the course's design life cycle: needfinding, design alternatives, prototy
 - Nielsen & Molich 1990, heuristic evaluation; Polson, Lewis, Rieman & Wharton 1992, cognitive walkthrough: evaluate each prototype before building.
 - MacKenzie 2013, ch. 4–5: experiment design for H1–H3.
 - Friedman et al. 2013, *Value Sensitive Design*; Winner 1980: lyrics ownership and AI-training consent.
+
+## Mockup v4 review (2026-11-19)
+
+Decisions from Juan:
+- Jump size: fixed at 2 bars. No adjustable control.
+- No left-handed mirroring setting.
+- Volume: a speaker icon that shows muted or unmuted state. Tap opens a vertical slider. It closes when tapped outside or shortly after a pick.
+- The loop icon looked like a restart button. Replace it with the standard repeat icon and a "LOOP" label.
+- The pin emoji is out. Use a drawn icon instead.
+- Bar and beat display: keep as is.
