@@ -86,6 +86,9 @@ A rap verse is counted in bars (4 beats each, 16 bars a verse, 8 a hook), and mo
 - **Overview map** *(Juan, 2026-11-18)*: a subtle, colour-coded strip of the whole song showing which parts already have lyrics, empty parts and sections. A bird's-eye view so you can see where lines sit while dragging them around a long song.
 - Sections (verse, hook, beat switch, instrumental) as regions on the timeline; looping a section assigns new lines to it.
 - Audio analysis stays small: an "is this a beat?" gate for uploads (how repetitive it is), a section map (where the music changes), and the beat grid for snapping.
+- **No single BPM per beat** *(Juan, 2026-11-18)*: tempo comes from the detected beat times, so switch-ups work. Up to 3 switch-ups is normal; warn from 4. Beats are capped at 20 minutes (enforced at upload).
+- Juan's worry: too many numbers and the zoomed-in view may be too complex. Hide numbers by default; zoomed-in view later. The next mockup needs room for artwork.
+- Full notes, spike results, the LLM training goal and the HCI method: `docs/research/lyrics-on-the-timeline.md`.
 - Research framing: hypotheses H1 (the automatic guess predicts placement), H2 (snapping cuts tap error), H3 (repetition score separates beats from non-beats); lab notebook in the repo; possible ISMIR late-breaking demo.
 
 - [x] **Spike: can we find the bars in a beat automatically?** *(2026-11-18)*: Beat This! on the 6 beats. 3 are clean 4/4 (99–100% 4-beat bars, ~10 ms jitter on two of them). Errors cluster in intros and breaks without drums (lucki, kodak, pnd-time). librosa doubles the tempo on 3 beats, and kodak (81 vs 108 BPM) is unresolved. 53 s of CPU and 1.8 GB of memory for all 6, too heavy for a normal Lambda. Listening check by Juan still pending. Code and clips in scratch, not committed.
