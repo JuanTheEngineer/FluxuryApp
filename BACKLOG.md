@@ -79,7 +79,16 @@ What already exists:
 
 A rap verse is counted in bars (4 beats each, 16 bars a verse, 8 a hook), and most rappers write one bar per line. Fluxury knows the beat, so it can show where each line falls and follow along as it plays.
 
-- [ ] **Spike: can we find the bars in a beat automatically?** (M, do first, go/no-go): run open-source beat and downbeat trackers (unverified candidates: madmom, Beat This!, Essentia/essentia.js, librosa for tempo) on the 6 beats; check by ear and on a timeline whether bar 1 and the tempo come out right. Expected trouble: intros without drums, half-time feel, swing.
+**Direction after Juan's review (2026-11-18, design not approved yet; the items below it are the older bar-grid plan and get rewritten once it is):**
+- A line is pinned to a **time in the audio** (seconds), not to a bar number. The smallest unit is one line, as in Spotify's synced lyrics. Lines without a time stay valid. This survives beat switches, tempo changes and instrumental parts.
+- Bars and beats are only a **snapping aid**, used where detection is confident (where the drums play).
+- Placing never interrupts writing: an automatic guess (the playhead when you start a line), then stamp ("this line starts now"), then drag on a timeline, with the line's length set by dragging its edge.
+- **Overview map** *(Juan, 2026-11-18)*: a subtle, colour-coded strip of the whole song showing which parts already have lyrics, empty parts and sections. A bird's-eye view so you can see where lines sit while dragging them around a long song.
+- Sections (verse, hook, beat switch, instrumental) as regions on the timeline; looping a section assigns new lines to it.
+- Audio analysis stays small: an "is this a beat?" gate for uploads (how repetitive it is), a section map (where the music changes), and the beat grid for snapping.
+- Research framing: hypotheses H1 (the automatic guess predicts placement), H2 (snapping cuts tap error), H3 (repetition score separates beats from non-beats); lab notebook in the repo; possible ISMIR late-breaking demo.
+
+- [x] **Spike: can we find the bars in a beat automatically?** *(2026-11-18)*: Beat This! on the 6 beats. 3 are clean 4/4 (99–100% 4-beat bars, ~10 ms jitter on two of them). Errors cluster in intros and breaks without drums (lucki, kodak, pnd-time). librosa doubles the tempo on 3 beats, and kodak (81 vs 108 BPM) is unresolved. 53 s of CPU and 1.8 GB of memory for all 6, too heavy for a normal Lambda. Listening check by Juan still pending. Code and clips in scratch, not committed.
 - [ ] **Store a bar grid per beat** (M): tempo, time of the first downbeat, and the list of downbeat times (handles tempo drift). Computed once when a beat is added; manual correction ("tap to set bar 1", nudge, tap tempo), because detection will sometimes be wrong.
 - [ ] **Bar numbers beside the lyrics** (M): line N = bar N by default, starting at a chosen bar (e.g. after a 4-bar intro). Works on a blank session: numbered empty bar slots you fill in, like a lined notebook. Inserting a line pushes the following bars down.
 - [ ] **Follow the beat while it plays** (M): highlight the current bar's line (or empty slot) and show 4 beat dots for where you are inside the bar. Works with no lyrics, partial lyrics and full lyrics. Must not move the cursor or yank the scroll while you type.
