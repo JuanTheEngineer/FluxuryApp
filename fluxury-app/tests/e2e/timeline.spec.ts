@@ -268,7 +268,9 @@ test('Step C: zoomed-in view shows bars around the playhead; dragging it looks a
   await page.getByTestId('section-bpm').fill('120')
   await page.getByTestId('section-bpm').press('Enter')
   await page.getByTestId('sections-toggle').click()
-  await expect(zoom).toContainText('bar 2')
+  const labels = page.getByTestId('zoom-label')
+  await expect(labels.filter({ hasText: /^2$/ })).toHaveCount(1) // plain bar numbers, no repeated "bar"
+  await expect(zoom).not.toContainText('bar')
 
   // Pin the first lyric line at about 0:04 (bar 3).
   const ql = page.locator('[data-testid="script-editor"] .ql-editor')
@@ -286,7 +288,7 @@ test('Step C: zoomed-in view shows bars around the playhead; dragging it looks a
   await expect(block).toBeVisible()
   const pos = page.getByTestId('beat-position')
   const posBefore = await pos.textContent()
-  const firstLabel = async () => (await zoom.textContent())?.match(/bar \d+/)?.[0]
+  const firstLabel = async () => (await labels.allTextContents()).join(',')
   const labelBefore = await firstLabel()
   const zb = (await zoom.boundingBox())!
   const bb = (await block.boundingBox())!
@@ -303,6 +305,35 @@ test('Step C: zoomed-in view shows bars around the playhead; dragging it looks a
   // Moving the beat (a tap on the strip) brings the view back to the playhead.
   await page.mouse.click(sb.x + sb.width * 0.02, sb.y + sb.height / 2)
   await expect.poll(firstLabel).toBe(labelBefore)
+
+  // Zoom: + shows fewer bars, − more; the level shows briefly and is remembered.
+  const barsShown = () => zoom.getAttribute('data-bars').then(Number)
+  expect(await barsShown()).toBe(4)
+  await page.getByTestId('zoom-in').click()
+  expect(await barsShown()).toBe(2)
+  await expect(page.getByTestId('zoom-level')).toHaveText('2 bars')
+  await page.getByTestId('zoom-out').click()
+  await page.getByTestId('zoom-out').click()
+  await page.getByTestId('zoom-out').click()
+  expect(await barsShown()).toBe(16)
+  await expect(page.getByTestId('zoom-out')).toBeDisabled() // 16 is the widest
+  expect((await labels.count())).toBeLessThanOrEqual(7) // labels thin out instead of crowding
+  await page.reload()
+  await expect(page.getByTestId('zoom-view')).toHaveAttribute('data-bars', '16', { timeout: 10_000 })
+  await page.getByTestId('zoom-in').click()
+  await page.getByTestId('zoom-in').click() // back to 4 for the rest
+
+  // Momentum: after a quick flick, the view keeps gliding once the finger lifts.
+  const z2 = (await page.getByTestId('zoom-view').boundingBox())!
+  await page.mouse.move(z2.x + z2.width * 0.8, z2.y + 10)
+  await page.mouse.down()
+  for (let i = 1; i <= 5; i++) {
+    await page.mouse.move(z2.x + z2.width * (0.8 - i * 0.05), z2.y + 10)
+    await page.waitForTimeout(10)
+  }
+  await page.mouse.up()
+  const atRelease = await firstLabel()
+  await expect.poll(firstLabel, { timeout: 2000 }).not.toBe(atRelease)
 
   // Hide it: a slim bar remains, the box leaves the strip, and the choice is remembered.
   await page.getByTestId('zoom-toggle').click()

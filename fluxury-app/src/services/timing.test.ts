@@ -223,7 +223,7 @@ describe('zoomed-in view', () => {
   it('ticks: beats, bar lines with labels, and the section name at its first bar', () => {
     const ticks = gridTicks(t, 10_000, 14_000)
     expect(ticks.map((k) => k.ms)).toEqual([10_000, 10_500, 11_000, 11_500, 12_000, 12_500, 13_000, 13_500])
-    expect(ticks.filter((k) => k.major).map((k) => k.label)).toEqual(['Verse 1 · bar 1', 'bar 2'])
+    expect(ticks.filter((k) => k.major).map((k) => k.label)).toEqual(['Verse 1', '2']) // no repeated "bar"
   })
 
   it('ticks follow each section’s own tempo across a beat switch', () => {
@@ -231,6 +231,20 @@ describe('zoomed-in view', () => {
     s = setTempo(s, s.sections[2].id, 60) // a beat every second after 20 s
     const ticks = gridTicks(s, 19_000, 22_000)
     expect(ticks.map((k) => k.ms)).toEqual([19_000, 19_500, 20_000, 21_000])
+  })
+
+  it('zoom levels: 1 bar steps by beats, 16 bars steps by bars; both keep the playhead centred', () => {
+    expect(zoomWindow(t, 14_000, 1)).toEqual([13_000, 15_000]) // a beat is 500 ms: 14 s in the middle
+    expect(zoomWindow(t, 14_200, 1)).toEqual([13_000, 15_000])
+    expect(zoomWindow(t, 14_600, 1)).toEqual([13_500, 15_500])
+    expect(zoomWindow(t, 40_000, 16)).toEqual([24_000, 56_000])
+    expect(zoomWindow(t, 41_000, 16)).toEqual([24_000, 56_000])
+  })
+
+  it('zoomed out: labels thin to every few bars and beat ticks go', () => {
+    const ticks = gridTicks(t, 24_000, 56_000) // 16 bars of Verse 1 (bars 8-23)
+    expect(ticks.every((k) => k.major)).toBe(true)
+    expect(ticks.filter((k) => k.label).map((k) => k.label)).toEqual(['9', '13', '17', '21'])
   })
 
   it('without a tempo: a tick every second, labelled every 2', () => {

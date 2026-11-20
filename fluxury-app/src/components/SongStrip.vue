@@ -3,7 +3,8 @@
        is set, where lines are placed, and the playhead. Drag or tap to move the
        beat; drag the line between two sections to move where one starts. -->
   <div class="select-none">
-    <div class="flex items-center justify-end min-h-[26px]">
+    <!-- Fixed height with a gap below, so the Sections button never overlaps the strip -->
+    <div class="flex items-center justify-end h-8 mb-1.5">
       <slot name="right" />
     </div>
     <div ref="box" class="relative h-11">

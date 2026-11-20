@@ -287,30 +287,26 @@ export function tapTempo(taps: number[]): number | null {
 
 // --- Zoomed-in view (Step C) ---
 
+/** Zoom levels of the zoomed-in view, in bars. Without a tempo, 2 s stand in for a bar. */
+export const ZOOM_LEVELS = [1, 2, 4, 8, 16]
 export const ZOOM_BARS = 4
-/** Window length when the section has no tempo. */
-export const ZOOM_NO_TEMPO_MS = 8000
+const NO_TEMPO_BAR_MS = 2000
 
 /**
- * The stretch of the beat the zoomed-in view shows: 4 bars, starting two bars
- * before the playhead's bar, so a line on a bar start (where Pin puts most
- * lines) sits in the middle. It steps a bar at a time (it doesn't slide every
- * frame). Without a tempo, 8 seconds stepping every 2. Never before 0 or past
+ * The stretch of the beat the zoomed-in view shows: `bars` bars with the
+ * playhead's bar (or, at 1 bar, its beat) in the middle, so a line on a bar
+ * start sits in the centre. It steps a bar (or beat) at a time instead of
+ * sliding every frame. Without a tempo, 2 s per "bar". Never before 0 or past
  * the end.
  */
-export function zoomWindow(t: Timing, nowMs: number): [number, number] {
+export function zoomWindow(t: Timing, nowMs: number, bars = ZOOM_BARS): [number, number] {
   const s = sectionAt(t, nowMs)
   const b = s && beatMs(s)
-  let w0: number
-  let len: number
-  if (s && b) {
-    const bar = b * s.beatsPerBar
-    len = bar * ZOOM_BARS
-    w0 = s.startMs + (Math.floor((nowMs - s.startMs) / bar) - 2) * bar
-  } else {
-    len = ZOOM_NO_TEMPO_MS
-    w0 = (Math.floor(nowMs / 2000) - 2) * 2000
-  }
+  const barMs = s && b ? b * s.beatsPerBar : NO_TEMPO_BAR_MS
+  const origin = s && b ? s.startMs : 0
+  const len = barMs * bars
+  const step = bars >= 2 ? barMs : s && b ? b : barMs / 4
+  let w0 = origin + Math.floor((nowMs - origin) / step) * step - len / 2
   const end = t.durationMs > 0 ? t.durationMs : w0 + len
   w0 = Math.max(0, Math.min(w0, end - len))
   return [Math.round(w0), Math.round(Math.min(end, w0 + len))]
@@ -320,31 +316,52 @@ export interface GridTick {
   ms: number
   /** A bar line (taller), or a beat (or second, without a tempo). */
   major: boolean
-  /** Text by the tick: "bar 3", "Verse 1 · bar 1" at a section's first bar, or a time. */
+  /** Text by the tick: the bar number ("3"), the section name at its first bar, or a time. */
   label: string | null
   color: string | null
 }
 
-/** Ticks for the zoomed-in view between `w0` and `w1`, following each section's own tempo. */
+/** Smallest power of two n with total / n <= max. */
+const thin = (total: number, max: number) => {
+  let n = 1
+  while (total / n > max) n *= 2
+  return n
+}
+
+/**
+ * Ticks for the zoomed-in view between `w0` and `w1`, following each
+ * section's own tempo. Bar numbers without the word "bar", like a music
+ * app's bar ruler. Zoomed out, labels thin to every 2, 4, 8 bars and beat
+ * ticks are left out, so a phone stays readable.
+ */
 export function gridTicks(t: Timing, w0: number, w1: number): GridTick[] {
   const out: GridTick[] = []
   const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms / 1000) % 60)).padStart(2, '0')}`
   const parts = t.sections.length ? t.sections : [{ startMs: 0, endMs: t.durationMs || w1, bpm: null, beatsPerBar: 4, name: '', color: null } as unknown as Section]
+  const span = Math.max(1, w1 - w0)
   for (const s of parts) {
     const a = Math.max(s.startMs, w0)
     const z = Math.min(s.endMs, w1)
     if (z <= a) continue
     const b = beatMs(s)
     if (b) {
+      const barsShown = span / (b * s.beatsPerBar)
+      const every = thin(barsShown, 6)
+      const beats = barsShown <= 8
       for (let k = Math.ceil((a - s.startMs) / b - 1e-6); s.startMs + k * b < z; k++) {
-        const ms = Math.round(s.startMs + k * b)
         const major = k % s.beatsPerBar === 0
+        if (!major && !beats) continue
+        const ms = Math.round(s.startMs + k * b)
         const bar = Math.floor(k / s.beatsPerBar) + 1
-        out.push({ ms, major, label: major ? (bar === 1 ? `${s.name} · bar 1` : `bar ${bar}`) : null, color: major && bar === 1 ? s.color : null })
+        const label = !major ? null : bar === 1 ? s.name : (bar - 1) % every === 0 ? String(bar) : null
+        out.push({ ms, major, label, color: major && bar === 1 ? s.color : null })
       }
     } else {
-      for (let ms = Math.ceil(a / 1000) * 1000; ms < z; ms += 1000) {
-        out.push({ ms, major: ms % 2000 === 0, label: ms % 2000 === 0 ? fmt(ms) : null, color: null })
+      const tickMs = 1000 * thin(span / 1000, 16)
+      const labelMs = 2000 * thin(span / 2000, 6)
+      for (let ms = Math.ceil(a / tickMs) * tickMs; ms < z; ms += tickMs) {
+        const major = ms % labelMs === 0
+        out.push({ ms, major, label: major ? fmt(ms) : null, color: null })
       }
     }
   }

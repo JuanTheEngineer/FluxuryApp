@@ -228,7 +228,7 @@
                 type="button"
                 data-testid="sections-toggle"
                 :aria-expanded="sectionsOpen"
-                class="px-2.5 py-1 rounded-full border border-slate-600 bg-slate-800 text-slate-200 hover:border-violet-400"
+                class="h-7 px-2.5 rounded-full border border-slate-600 bg-slate-800 text-slate-200 hover:border-violet-400"
                 @click="sectionsOpen = !sectionsOpen"
               >
                 Sections {{ sectionsOpen ? '▴' : '▾' }}
@@ -256,8 +256,11 @@
           :now-ms="nowMs"
           :target-line="targetLine"
           :playing-line="playingIdx"
+          :level="zoomLevel"
+          :following="panW0 == null"
           @pick="onZoomPick"
           @pan="onZoomPan"
+          @zoom="setZoomLevel"
           @seek="seekMs"
           @hide="setZoomOpen(false)"
         />
@@ -395,7 +398,7 @@ import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, tim
 import { getEditorMode, setEditorMode, type EditorMode } from '@/services/editorMode'
 import {
   emptyTiming, decodeTiming, splitAt, removeSection, updateSection, applyTempoToAll,
-  snap, positionOf, sectionAt, setTempo, moveBoundary, withIntro, withOutro, barLines, zoomWindow, gridTicks, type Timing, type Section, type SectionEdit,
+  snap, positionOf, sectionAt, setTempo, moveBoundary, withIntro, withOutro, barLines, zoomWindow, gridTicks, ZOOM_LEVELS, type Timing, type Section, type SectionEdit,
 } from '@/services/timing'
 import SongStrip from '@/components/SongStrip.vue'
 import SectionPanel from '@/components/SectionPanel.vue'
@@ -681,7 +684,26 @@ const stripBlocks = computed(() => {
 
 // --- Zoomed-in view (Step C) ---
 const ZOOM_KEY = 'fluxury.zoomOpen'
+const ZOOM_LEVEL_KEY = 'fluxury.zoomLevel'
 const zoomOpen = ref(readZoomOpen())
+/** Index into ZOOM_LEVELS (1, 2, 4, 8, 16 bars); 4 bars unless changed on this device. */
+const zoomLevel = ref(readZoomLevel())
+function readZoomLevel() {
+  try {
+    const v = Number(localStorage.getItem(ZOOM_LEVEL_KEY))
+    return Number.isInteger(v) && v >= 0 && v < ZOOM_LEVELS.length && localStorage.getItem(ZOOM_LEVEL_KEY) != null ? v : ZOOM_LEVELS.indexOf(4)
+  } catch {
+    return ZOOM_LEVELS.indexOf(4)
+  }
+}
+function setZoomLevel(v: number) {
+  zoomLevel.value = v
+  try {
+    localStorage.setItem(ZOOM_LEVEL_KEY, String(v))
+  } catch {
+    // not remembered on this device
+  }
+}
 function readZoomOpen() {
   try {
     return localStorage.getItem(ZOOM_KEY) !== '0' // shown unless hidden on this device
@@ -697,7 +719,7 @@ function setZoomOpen(v: boolean) {
     // not remembered on this device
   }
 }
-const followRange = computed(() => zoomWindow(timing.value, nowMs.value))
+const followRange = computed(() => zoomWindow(timing.value, nowMs.value, ZOOM_LEVELS[zoomLevel.value]))
 // Dragging the zoomed-in view looks along the song without moving the beat.
 // It follows the playhead again when the beat is moved, or 3 s after the last
 // drag while the beat plays.
