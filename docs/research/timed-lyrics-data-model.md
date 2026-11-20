@@ -149,3 +149,19 @@ Gap: section changes are saved to the server only, not to the local draft. If th
 Layout fix found by the browser test: `<main>` had `overflow-y-auto` but never scrolls (the window does), which stops sticky elements inside it. Changed to `overflow-x-clip` in `layouts/DefaultLayout.vue`.
 
 Tests: 317 unit and integration tests pass (16 new: the section model, snapping, tap tempo, untrusted data, the store). 3 browser tests pass, including a Step B test that scrubs, adds a section at 120 BPM, pins a line that lands at Verse 1 bar 6 (1:00), checks the strip stays in view, and removes a section with Undo.
+
+### Step B, after Juan's first look (2026-11-20)
+
+Juan's notes: the strip didn't look like mockup v6, tapping it did nothing visible except move the playhead, a section couldn't be moved after it was made, the tempo row was too big and seemed not to work, and the lyrics didn't follow the playhead. He likes Tap tempo, and tempo should be optional.
+
+Changes:
+- **The strip responds.** The section under the playhead is drawn brighter. Section names sit on the bands. Tapping a pinned line's block jumps there, outlines that line and scrolls the lyrics to it. With Sections open, tapping a section opens it.
+- **Tempo is visible:** faint bar ticks on the strip wherever a tempo is set, thinned to every 2, 4 or 8 bars on a narrow strip (`barLines`).
+- **Move a section:** drag the line between two sections on the strip (or arrow keys on it), with Undo. It stays at least 1 s inside both neighbours (`moveBoundary`).
+- **One tempo for the song:** setting or tapping a tempo fills every section that has none; a section with its own tempo (a beat switch) keeps it (`setTempo`). The message says how many other sections took it, with Undo.
+- **Smaller panel:** name, then a compact "♩ 100 | Tap" control, then "More" for beats per bar, colour, "Use this tempo everywhere" and Remove.
+- **Lyrics follow the beat:** while the beat moves, the latest placed line that has started is kept readable below the strip (`followLine`). It stays on the last placed line once the song passes it, does nothing if the line is already in view, and pauses for 3 s after the writer scrolls or types.
+
+Testing note: `playwright.local.config.ts` runs the demo-mode browser tests on port 5196, because the default config reuses any server on 5173 (Juan's beta-mode server has no demo data). A browser test also caught that "in the viewport" isn't enough (a line can be hidden under the sticky strip); it now checks the line sits between the strip and the player.
+
+Tests: 327 unit and integration tests, and 4 timeline browser tests pass.
