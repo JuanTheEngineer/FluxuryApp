@@ -165,3 +165,23 @@ Changes:
 Testing note: `playwright.local.config.ts` runs the demo-mode browser tests on port 5196, because the default config reuses any server on 5173 (Juan's beta-mode server has no demo data). A browser test also caught that "in the viewport" isn't enough (a line can be hidden under the sticky strip); it now checks the line sits between the strip and the player.
 
 Tests: 327 unit and integration tests, and 4 timeline browser tests pass.
+
+### Step B, second look (2026-11-20)
+
+- Section boundaries are draggable only for the section selected in the Sections panel, with a coloured grip so they can't be confused with the white playhead.
+- Blank lines can't be pinned (Pin is disabled on them), so they never show on the strip.
+- Decision: the strip stays as it is now; precise work belongs in the zoomed-in view.
+- Why tempo (Juan asked): optional. It snaps Pin to the beat, gives bar numbers, and is needed for the zoomed-in view's grid and for the training labels. Whether snapping improves accuracy is research question H2, untested.
+
+## Step C status (2026-11-20)
+
+Built and tested locally, not deployed. Juan chose to deploy B and C together.
+- **Zoomed-in view** (`components/ZoomView.vue`) under the strip: 4 bars, starting one bar before the playhead's bar, so it steps a bar at a time instead of sliding every frame (`zoomWindow`). Without a tempo it shows 8 seconds, stepping every 2.
+- Beat ticks, bar lines labelled "bar 3", the section's name at its bar 1, and each section's own tempo across a beat switch (`gridTicks`). The section colour runs along the top.
+- Placed lines are blocks with their words. **Drag a block** to move the line in time. It snaps to the beat, moves into time order, and the message has Undo (one edit per drag, not per pixel). **Tap a block** to pick that line and scroll the lyrics to it. **Tap empty space** to move the beat there.
+- **Hide ▴** collapses it to a slim "Show zoomed-in view ▾" bar with a small grid icon. Remembered per device (`fluxury.zoomOpen`), shown by default.
+- A white box on the strip marks the part shown in the zoomed-in view.
+
+Not included: dragging a block's edge to change how long a line lasts. A line still lasts until the next placed line, or 8 s at most.
+
+Tests: 333 unit and integration tests pass (6 new for the window and grid), and 5 timeline browser tests. The Step C test pins a line, drags it one bar, checks it moved exactly 2000 ms at 120 BPM, undoes it, and hides and shows the view across a reload.
