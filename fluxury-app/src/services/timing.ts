@@ -256,3 +256,68 @@ export function tapTempo(taps: number[]): number | null {
   const bpm = 60000 / mid
   return validBpm(bpm)
 }
+
+// --- Zoomed-in view (Step C) ---
+
+export const ZOOM_BARS = 4
+/** Window length when the section has no tempo. */
+export const ZOOM_NO_TEMPO_MS = 8000
+
+/**
+ * The stretch of the beat the zoomed-in view shows: 4 bars, starting one bar
+ * before the playhead's bar, so the playhead sits in the second bar and the
+ * view steps a bar at a time (it doesn't slide every frame). Without a tempo,
+ * 8 seconds stepping every 2. Never before 0 or past the end.
+ */
+export function zoomWindow(t: Timing, nowMs: number): [number, number] {
+  const s = sectionAt(t, nowMs)
+  const b = s && beatMs(s)
+  let w0: number
+  let len: number
+  if (s && b) {
+    const bar = b * s.beatsPerBar
+    len = bar * ZOOM_BARS
+    w0 = Math.max(s.startMs, s.startMs + (Math.floor((nowMs - s.startMs) / bar) - 1) * bar)
+  } else {
+    len = ZOOM_NO_TEMPO_MS
+    w0 = (Math.floor(nowMs / 2000) - 1) * 2000
+  }
+  const end = t.durationMs > 0 ? t.durationMs : w0 + len
+  w0 = Math.max(0, Math.min(w0, end - len))
+  return [Math.round(w0), Math.round(Math.min(end, w0 + len))]
+}
+
+export interface GridTick {
+  ms: number
+  /** A bar line (taller), or a beat (or second, without a tempo). */
+  major: boolean
+  /** Text by the tick: "bar 3", "Verse 1 · bar 1" at a section's first bar, or a time. */
+  label: string | null
+  color: string | null
+}
+
+/** Ticks for the zoomed-in view between `w0` and `w1`, following each section's own tempo. */
+export function gridTicks(t: Timing, w0: number, w1: number): GridTick[] {
+  const out: GridTick[] = []
+  const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms / 1000) % 60)).padStart(2, '0')}`
+  const parts = t.sections.length ? t.sections : [{ startMs: 0, endMs: t.durationMs || w1, bpm: null, beatsPerBar: 4, name: '', color: null } as unknown as Section]
+  for (const s of parts) {
+    const a = Math.max(s.startMs, w0)
+    const z = Math.min(s.endMs, w1)
+    if (z <= a) continue
+    const b = beatMs(s)
+    if (b) {
+      for (let k = Math.ceil((a - s.startMs) / b - 1e-6); s.startMs + k * b < z; k++) {
+        const ms = Math.round(s.startMs + k * b)
+        const major = k % s.beatsPerBar === 0
+        const bar = Math.floor(k / s.beatsPerBar) + 1
+        out.push({ ms, major, label: major ? (bar === 1 ? `${s.name} · bar 1` : `bar ${bar}`) : null, color: major && bar === 1 ? s.color : null })
+      }
+    } else {
+      for (let ms = Math.ceil(a / 1000) * 1000; ms < z; ms += 1000) {
+        out.push({ ms, major: ms % 2000 === 0, label: ms % 2000 === 0 ? fmt(ms) : null, color: null })
+      }
+    }
+  }
+  return out
+}

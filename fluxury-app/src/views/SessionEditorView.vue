@@ -199,6 +199,7 @@
           :current-id="nowPos?.section.id ?? null"
           :target-line="targetLine"
           :selected-id="sectionsOpen ? selectedSectionId : null"
+          :window-range="zoomOpen ? zoomRange : null"
           @seek="seekMs"
           @tap="onStripTap"
           @boundary-move="onBoundaryMove"
@@ -236,6 +237,31 @@
           @tempo-to-all="tempoToAll"
           @remove="removeSectionWithUndo"
         />
+        <ZoomView
+          v-if="zoomOpen"
+          :timing="timing"
+          :window="zoomRange"
+          :ticks="zoomTicks"
+          :blocks="zoomBlocks"
+          :now-ms="nowMs"
+          :target-line="targetLine"
+          :playing-line="playingIdx"
+          @pick="onZoomPick"
+          @move="onZoomMove"
+          @seek="seekMs"
+          @hide="setZoomOpen(false)"
+        />
+        <button
+          v-else
+          type="button"
+          data-testid="zoom-toggle"
+          :aria-expanded="false"
+          class="mt-2 w-full min-h-[30px] flex items-center justify-center gap-1.5 text-[11px] text-slate-300 bg-[#111c33] border border-dashed border-slate-600 rounded-lg hover:border-violet-400"
+          @click="setZoomOpen(true)"
+        >
+          <svg aria-hidden="true" width="34" height="10" viewBox="0 0 34 10"><g stroke="#94a3b8"><line x1="1" y1="0" x2="1" y2="10"/><line x1="9" y1="5" x2="9" y2="10"/><line x1="17" y1="0" x2="17" y2="10"/><line x1="25" y1="5" x2="25" y2="10"/><line x1="33" y1="0" x2="33" y2="10"/></g></svg>
+          Show zoomed-in view ▾
+        </button>
       </div>
 
       <!-- Quill Editor — click anywhere to focus. In the timeline view the
@@ -359,10 +385,11 @@ import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, tim
 import { getEditorMode, setEditorMode, type EditorMode } from '@/services/editorMode'
 import {
   emptyTiming, decodeTiming, splitAt, removeSection, updateSection, applyTempoToAll,
-  snap, positionOf, sectionAt, setTempo, moveBoundary, barLines, type Timing, type Section, type SectionEdit,
+  snap, positionOf, sectionAt, setTempo, moveBoundary, barLines, zoomWindow, gridTicks, type Timing, type Section, type SectionEdit,
 } from '@/services/timing'
 import SongStrip from '@/components/SongStrip.vue'
 import SectionPanel from '@/components/SectionPanel.vue'
+import ZoomView from '@/components/ZoomView.vue'
 import LineTimeOverlay from '@/components/LineTimeOverlay.vue'
 import BeatPlayer from '@/components/BeatPlayer.vue'
 import SaveStatus from '@/components/SaveStatus.vue'
@@ -530,17 +557,39 @@ function pinTarget() {
   if (!q || from == null || !playerRef.value || !targetHasText.value) return
   // Snaps to the bar or beat when the section has a tempo (people tap late and unevenly).
   const ms = snapMs(Math.round(playerRef.value.getPosition() * 1000))
-  // One Undo reverts exactly this pin (and its move), never earlier typing.
+  const at = placeLine(from, ms)
+  // Move on down the song, so a verse can be pinned line after line.
+  targetLine.value = nextUnplaced(lineTimes.value, at) ?? at
+  showPinToast(`Pinned “${snippet(lineTimes.value[at]?.text)}” at ${describeTime(ms).long}.`, undoLyricsEdit)
+}
+
+/**
+ * Give line `from` the time `ms` and move it into time order among the placed
+ * lines, as one undoable edit (never merged with earlier typing). Returns
+ * where the line is now.
+ */
+function placeLine(from: number, ms: number): number {
+  const q = quill.value!
   q.history.cutoff()
   setLineTime(q, from, ms)
   const to = timeOrderTarget(readLineTimes(q), from)
   moveLine(q, from, to)
   q.history.cutoff()
   refreshLines()
-  const at = to > from + 1 ? to - 1 : to === from + 1 ? from : to
-  // Move on down the song, so a verse can be pinned line after line.
-  targetLine.value = nextUnplaced(lineTimes.value, at) ?? at
-  showPinToast(`Pinned “${snippet(lineTimes.value[at]?.text)}” at ${describeTime(ms).long}.`, undoLyricsEdit)
+  return to > from + 1 ? to - 1 : to === from + 1 ? from : to
+}
+
+/** Drag in the zoomed-in view: the line takes the new time. */
+function onZoomMove(line: number, ms: number) {
+  if (!quill.value) return
+  const at = placeLine(line, ms)
+  targetLine.value = at
+  showPinToast(`Moved “${snippet(lineTimes.value[at]?.text)}” to ${describeTime(ms).long}.`, undoLyricsEdit)
+}
+
+function onZoomPick(line: number) {
+  targetLine.value = line
+  followTo(line, true)
 }
 
 function unpinTarget() {
@@ -624,6 +673,28 @@ const stripBlocks = computed(() => {
     color: sectionAt(timing.value, p.start)?.color ?? '#8b5cf6',
   }))
 })
+
+// --- Zoomed-in view (Step C) ---
+const ZOOM_KEY = 'fluxury.zoomOpen'
+const zoomOpen = ref(readZoomOpen())
+function readZoomOpen() {
+  try {
+    return localStorage.getItem(ZOOM_KEY) !== '0' // shown unless hidden on this device
+  } catch {
+    return true
+  }
+}
+function setZoomOpen(v: boolean) {
+  zoomOpen.value = v
+  try {
+    localStorage.setItem(ZOOM_KEY, v ? '1' : '0')
+  } catch {
+    // not remembered on this device
+  }
+}
+const zoomRange = computed(() => zoomWindow(timing.value, nowMs.value))
+const zoomTicks = computed(() => gridTicks(timing.value, zoomRange.value[0], zoomRange.value[1]))
+const zoomBlocks = computed(() => stripBlocks.value.map((b) => ({ ...b, text: lineTimes.value[b.line]?.text ?? '' })))
 
 /** Bar lines, at least ~1.2% of the strip apart so they stay readable on a phone. */
 const stripBars = computed(() => barLines(timing.value, durationMs.value * 0.012))

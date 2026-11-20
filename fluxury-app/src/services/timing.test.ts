@@ -196,3 +196,45 @@ describe('bar lines for the strip', () => {
     expect(b.slice(0, 2)).toEqual([8000, 18_000]) // every 4 bars (8 s) in each section
   })
 })
+
+import { zoomWindow, gridTicks } from './timing'
+
+describe('zoomed-in view', () => {
+  let t = split(emptyTiming(DUR), 10_000).timing
+  t = setTempo(t, t.sections[1].id, 120) // bars of 2 s in both sections
+  t = { ...t, sections: t.sections.map((s, i) => (i === 1 ? { ...s, name: 'Verse 1' } : s)) }
+
+  it('shows 4 bars, starting one bar before the playhead’s bar', () => {
+    expect(zoomWindow(t, 15_000)).toEqual([12_000, 20_000]) // playhead in bar 3 of Verse 1 (14-16 s)
+    expect(zoomWindow(t, 15_900)).toEqual([12_000, 20_000]) // steps by bars, doesn't slide
+    expect(zoomWindow(t, 16_100)).toEqual([14_000, 22_000])
+  })
+
+  it('never starts before 0 or runs past the end', () => {
+    expect(zoomWindow(t, 300)[0]).toBe(0)
+    expect(zoomWindow(t, DUR - 100)[1]).toBe(DUR)
+  })
+
+  it('without a tempo: 8 seconds, stepping every 2', () => {
+    const plain = emptyTiming(DUR)
+    expect(zoomWindow(plain, 9_500)).toEqual([6000, 14_000])
+  })
+
+  it('ticks: beats, bar lines with labels, and the section name at its first bar', () => {
+    const ticks = gridTicks(t, 10_000, 14_000)
+    expect(ticks.map((k) => k.ms)).toEqual([10_000, 10_500, 11_000, 11_500, 12_000, 12_500, 13_000, 13_500])
+    expect(ticks.filter((k) => k.major).map((k) => k.label)).toEqual(['Verse 1 · bar 1', 'bar 2'])
+  })
+
+  it('ticks follow each section’s own tempo across a beat switch', () => {
+    let s = split(t, 20_000).timing
+    s = setTempo(s, s.sections[2].id, 60) // a beat every second after 20 s
+    const ticks = gridTicks(s, 19_000, 22_000)
+    expect(ticks.map((k) => k.ms)).toEqual([19_000, 19_500, 20_000, 21_000])
+  })
+
+  it('without a tempo: a tick every second, labelled every 2', () => {
+    const ticks = gridTicks(emptyTiming(DUR), 6000, 9000)
+    expect(ticks.map((k) => [k.ms, k.label])).toEqual([[6000, '0:06'], [7000, null], [8000, '0:08']])
+  })
+})

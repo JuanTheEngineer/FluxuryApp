@@ -71,6 +71,19 @@
           vector-effect="non-scaling-stroke"
           rx="1"
         />
+        <rect
+          v-if="windowRange"
+          data-testid="strip-window"
+          :x="x(windowRange[0])"
+          y="0.5"
+          :width="Math.max(2, x(windowRange[1]) - x(windowRange[0]))"
+          :height="H - 1"
+          fill="none"
+          stroke="#e2e8f0"
+          stroke-width="1.5"
+          vector-effect="non-scaling-stroke"
+          rx="2"
+        />
         <line
           :x1="x(nowMs)"
           :x2="x(nowMs)"
@@ -138,6 +151,8 @@ const props = defineProps<{
   targetLine: number | null
   /** The section being edited: only its boundaries can be dragged. */
   selectedId: string | null
+  /** The stretch shown in the zoomed-in view, boxed. Null when it's hidden. */
+  windowRange?: [number, number] | null
 }>()
 const emit = defineEmits<{
   /** While scrubbing. */

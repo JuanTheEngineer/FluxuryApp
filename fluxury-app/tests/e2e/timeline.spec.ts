@@ -238,3 +238,64 @@ test('Step B review: tap a pinned line on the strip, move a section, one tempo f
   await expectReadable(page, firstLine)
   await page.screenshot({ path: test.info().outputPath('step-b-review.png') })
 })
+
+test('Step C: zoomed-in view shows bars around the playhead; drag a line to move it, by beats, with Undo', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await openFirstSession(page)
+  if (!(await page.getByTestId('editor-mode-toggle').textContent())?.includes('Back')) {
+    await page.getByTestId('editor-mode-toggle').click()
+  }
+  const strip = page.getByTestId('song-strip')
+  await expect(strip).toBeVisible({ timeout: 10_000 })
+  const zoom = page.getByTestId('zoom-view')
+  await expect(zoom).toBeVisible() // shown by default
+  await expect(page.getByTestId('strip-window')).toHaveCount(1) // its box on the strip
+
+  // One section at 120 BPM for the whole beat (a beat is 500 ms, a bar 2 s).
+  const sb = (await strip.boundingBox())!
+  await page.mouse.click(sb.x + 3, sb.y + sb.height / 2)
+  await page.getByTestId('sections-toggle').click()
+  await page.getByTestId('add-section').click()
+  await page.getByTestId('section-bpm').fill('120')
+  await page.getByTestId('section-bpm').press('Enter')
+  await page.getByTestId('sections-toggle').click()
+  await expect(zoom).toContainText('bar 2')
+
+  // Pin the first lyric line at about 0:04 (bar 3).
+  const ql = page.locator('[data-testid="script-editor"] .ql-editor')
+  const first = ql.locator('> *').first()
+  await page.mouse.click(sb.x + sb.width * 0.02, sb.y + sb.height / 2)
+  await first.click()
+  await page.getByTestId('pin-line').click()
+  const timeOf = () => first.getAttribute('data-time').then(Number)
+  const before = await timeOf()
+  await expect(page.getByTestId('pin-toast')).toContainText(/bar \d+/) // on the section's grid (it starts where the strip was tapped)
+
+  // Drag its block one bar (a quarter of the 4-bar view) to the right.
+  const block = page.getByTestId('zoom-line').first()
+  await expect(block).toBeVisible()
+  const bb = (await block.boundingBox())!
+  const zb = (await zoom.boundingBox())!
+  await page.mouse.move(bb.x + 8, bb.y + bb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bb.x + 8 + zb.width / 4, bb.y + bb.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(page.getByTestId('pin-toast')).toContainText('Moved')
+  const after = await ql.locator('> *').filter({ hasText: (await first.textContent())! }).first().getAttribute('data-time').then(Number)
+  expect(after - before).toBe(2000) // exactly one bar later, on the grid
+  await page.screenshot({ path: test.info().outputPath('step-c.png') })
+
+  // Undo puts it back.
+  await page.getByTestId('pin-undo').click()
+  expect(await timeOf()).toBe(before)
+
+  // Hide it: a slim bar remains, the box leaves the strip, and the choice is remembered.
+  await page.getByTestId('zoom-toggle').click()
+  await expect(zoom).toHaveCount(0)
+  await expect(page.getByTestId('zoom-toggle')).toContainText('Show zoomed-in view')
+  await expect(page.getByTestId('strip-window')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByTestId('zoom-toggle')).toContainText('Show zoomed-in view', { timeout: 10_000 })
+  await page.getByTestId('zoom-toggle').click()
+  await expect(page.getByTestId('zoom-view')).toBeVisible()
+})
