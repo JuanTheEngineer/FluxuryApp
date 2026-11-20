@@ -111,7 +111,9 @@ Classic "keep mine" also overwrites the other copy's line times and sections, by
 
 ## Step A status (2026-11-20)
 
-Built and tested locally, not deployed. Same editor and same document as classic; the timeline view only adds UI on top.
+**Deployed and verified (2026-11-20):** pushed as `5e391ad`, all 11 deployment checks passed, the live bundle `index-Bwq1MBCk.js` contains the timeline view, the live site loads with no script errors, and the beta test (save, reopen in a fresh browser) passed against www.fluxury.app.
+
+Built and tested locally before the deploy. Same editor and same document as classic; the timeline view only adds UI on top.
 - **"✨ Try new" / "Back to classic"** pill next to the session title. Remembered per device (`services/editorMode.ts`).
 - **Line times beside each placed line** (`components/LineTimeOverlay.vue`), drawn on top of Quill from each line's measured box, never inside Quill's DOM. Tapping a time jumps the beat there.
 - **Playing-line highlight:** the latest line that has started, until the next placed line (or 8 s).
