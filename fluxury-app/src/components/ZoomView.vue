@@ -1,15 +1,20 @@
 <template>
   <!-- A few bars around the playhead: the beat grid and the placed lines as
-       blocks. Drag a block to move its line in time (snaps to the beat); tap a
-       block to pick that line; tap empty space to move the beat there. -->
+       blocks. Drag anywhere to look along the song (the playhead stays put);
+       tap a block to pick that line; tap empty space to move the beat there.
+       Lines can't be dragged: moving them by hand mixes them up too easily.
+       To change a line's time, pick it and Pin it again. -->
   <!-- No instructions, like the strip: the blocks look draggable and the grip cursor says so.
        The hide button sits in its own column, so it never covers a line. -->
   <div class="mt-2 flex items-stretch gap-1">
     <div
       ref="box"
       data-testid="zoom-view"
-      class="relative flex-1 min-w-0 h-[72px] rounded-lg bg-[#111c33] overflow-hidden touch-none select-none cursor-pointer"
-      @pointerdown="downEmpty"
+      class="relative flex-1 min-w-0 h-[72px] rounded-lg bg-[#111c33] overflow-hidden touch-none select-none cursor-grab active:cursor-grabbing"
+      @pointerdown="down"
+      @pointermove="move"
+      @pointerup="up"
+      @pointercancel="press = null"
     >
       <!-- section colour along the top -->
       <div
@@ -39,20 +44,15 @@
         :data-line="b.line"
         role="button"
         tabindex="0"
-        :aria-label="`${b.text || 'Line'}: drag to move it, tap to pick it`"
-        class="absolute top-[20px] h-8 rounded-md px-1.5 flex items-center text-[12px] text-white overflow-hidden whitespace-nowrap cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+        :aria-label="`${b.text || 'Line'}: pick this line`"
+        class="absolute top-[20px] h-8 rounded-md px-1.5 flex items-center text-[12px] text-white overflow-hidden whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
         :style="{
-          left: `calc(${pct(b.from)}% + 2px)`,
-          width: `max(24px, calc(${pct(b.to) - pct(b.from)}% - 4px))`,
+          left: `calc(${pct(b.start)}% + 2px)`,
+          width: `max(24px, calc(${pct(b.end) - pct(b.start)}% - 4px))`,
           background: b.color,
-          opacity: b.line === playingLine || b.line === dragLine ? 0.95 : 0.55,
+          opacity: b.line === playingLine ? 0.95 : 0.55,
           outline: b.line === targetLine ? '1.5px solid #f8fafc' : 'none',
-          zIndex: b.line === dragLine ? 2 : 1,
         }"
-        @pointerdown.stop="grab($event, b)"
-        @pointermove="drag"
-        @pointerup="drop"
-        @pointercancel="cancel"
         @keydown.enter.prevent="emit('pick', b.line)"
       >
         {{ b.text }}
@@ -75,7 +75,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { snap, type GridTick, type Timing } from '@/services/timing'
+import type { GridTick, Timing } from '@/services/timing'
 
 type Block = { line: number; start: number; end: number; color: string; text: string }
 const props = defineProps<{
@@ -89,8 +89,9 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   pick: [line: number]
-  move: [line: number, ms: number]
   seek: [ms: number]
+  /** Look along the song: show from `w0` on. The playhead doesn't move. */
+  pan: [w0: number]
   hide: []
 }>()
 
@@ -104,54 +105,31 @@ const bands = computed(() =>
     .filter((s) => s.z > s.a),
 )
 
-// While dragging, the block is drawn at the preview time; the line itself
-// only changes on release (one undoable edit, not one per pixel).
-const dragLine = ref<number | null>(null)
-const preview = ref(0)
-let press: { x: number; start: number; moved: boolean; width: number } | null = null
+const shown = computed(() => props.blocks.filter((b) => b.end > props.window[0] && b.start < props.window[1]))
 
-const shown = computed(() =>
-  props.blocks
-    .map((b) => {
-      if (b.line !== dragLine.value) return { ...b, from: b.start, to: b.end }
-      const len = b.end - b.start
-      return { ...b, from: preview.value, to: preview.value + len }
-    })
-    .filter((b) => b.to > props.window[0] && b.from < props.window[1]),
-)
+// A press is a tap (pick a line, or move the beat there) unless it moves
+// more than 6 px: then it's a drag that slides the view along the song.
+const press = ref<{ x: number; w0: number; moved: boolean; width: number } | null>(null)
 
-function grab(e: PointerEvent, b: Block) {
+function down(e: PointerEvent) {
   const el = e.currentTarget as Element
   el.setPointerCapture(e.pointerId)
-  press = { x: e.clientX, start: b.start, moved: false, width: box.value!.getBoundingClientRect().width }
-  dragLine.value = b.line
-  preview.value = b.start
+  press.value = { x: e.clientX, w0: props.window[0], moved: false, width: box.value!.getBoundingClientRect().width }
 }
-function drag(e: PointerEvent) {
-  if (!press) return
-  const dx = e.clientX - press.x
-  if (Math.abs(dx) > 6) press.moved = true
-  if (!press.moved) return
-  const end = props.timing.durationMs || Infinity
-  const raw = Math.min(end - 1, Math.max(0, press.start + (dx / press.width) * span.value))
-  preview.value = props.timing.sections.length ? snap(props.timing, raw) : Math.round(raw)
+function move(e: PointerEvent) {
+  const p = press.value
+  if (!p) return
+  const dx = e.clientX - p.x
+  if (Math.abs(dx) > 6) p.moved = true
+  if (p.moved) emit('pan', Math.round(p.w0 - (dx / p.width) * span.value))
 }
-function drop() {
-  if (!press || dragLine.value == null) return
-  const line = dragLine.value
-  const moved = press.moved && preview.value !== press.start
-  const wasTap = !press.moved
-  press = null
-  dragLine.value = null
-  if (moved) emit('move', line, preview.value)
-  else if (wasTap) emit('pick', line)
-}
-function cancel() {
-  press = null
-  dragLine.value = null
-}
-
-function downEmpty(e: PointerEvent) {
+function up(e: PointerEvent) {
+  const p = press.value
+  press.value = null
+  if (!p || p.moved) return
+  // Pointer capture sends the event to the box, so find what is under the finger.
+  const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-line]')
+  if (hit) return emit('pick', Number(hit.getAttribute('data-line')))
   const r = box.value!.getBoundingClientRect()
   emit('seek', Math.round(props.window[0] + ((e.clientX - r.left) / r.width) * span.value))
 }

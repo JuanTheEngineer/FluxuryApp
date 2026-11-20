@@ -250,7 +250,7 @@ test('Step B review: tap a pinned line on the strip, move a section, one tempo f
   await page.screenshot({ path: test.info().outputPath('step-b-review.png') })
 })
 
-test('Step C: zoomed-in view shows bars around the playhead; drag a line to move it, by beats, with Undo', async ({ page }) => {
+test('Step C: zoomed-in view shows bars around the playhead; dragging it looks along the song, lines stay put', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 })
   await openFirstSession(page)
   await useTimeline(page)
@@ -280,23 +280,29 @@ test('Step C: zoomed-in view shows bars around the playhead; drag a line to move
   const before = await timeOf()
   await expect(page.getByTestId('pin-toast')).toContainText(/bar \d+/) // on the section's grid (it starts where the strip was tapped)
 
-  // Drag its block one bar (a quarter of the 4-bar view) to the right.
+  // Dragging in the zoomed-in view slides it along the song. The line keeps its
+  // time (lines can't be dragged) and the playhead stays where it was.
   const block = page.getByTestId('zoom-line').first()
   await expect(block).toBeVisible()
-  const bb = (await block.boundingBox())!
+  const pos = page.getByTestId('beat-position')
+  const posBefore = await pos.textContent()
+  const firstLabel = async () => (await zoom.textContent())?.match(/bar \d+/)?.[0]
+  const labelBefore = await firstLabel()
   const zb = (await zoom.boundingBox())!
-  await page.mouse.move(bb.x + 8, bb.y + bb.height / 2)
+  const bb = (await block.boundingBox())!
+  await page.mouse.move(bb.x + 8, bb.y + bb.height / 2) // start the drag ON the line's block
   await page.mouse.down()
-  await page.mouse.move(bb.x + 8 + zb.width / 4, bb.y + bb.height / 2, { steps: 6 })
+  await page.mouse.move(bb.x + 8 - zb.width / 2, bb.y + bb.height / 2, { steps: 6 }) // half the view: 2 bars later
   await page.mouse.up()
-  await expect(page.getByTestId('pin-toast')).toContainText('Moved')
-  const after = await ql.locator('> *').filter({ hasText: (await first.textContent())! }).first().getAttribute('data-time').then(Number)
-  expect(after - before).toBe(2000) // exactly one bar later, on the grid
+  expect(await timeOf()).toBe(before)
+  await expect(pos).toHaveText(posBefore!)
+  expect(await firstLabel()).not.toBe(labelBefore)
+  await expect(page.getByTestId('pin-toast')).not.toContainText('Moved')
   await page.screenshot({ path: test.info().outputPath('step-c.png') })
 
-  // Undo puts it back.
-  await page.getByTestId('pin-undo').click()
-  expect(await timeOf()).toBe(before)
+  // Moving the beat (a tap on the strip) brings the view back to the playhead.
+  await page.mouse.click(sb.x + sb.width * 0.02, sb.y + sb.height / 2)
+  await expect.poll(firstLabel).toBe(labelBefore)
 
   // Hide it: a slim bar remains, the box leaves the strip, and the choice is remembered.
   await page.getByTestId('zoom-toggle').click()

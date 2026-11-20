@@ -257,7 +257,7 @@
           :target-line="targetLine"
           :playing-line="playingIdx"
           @pick="onZoomPick"
-          @move="onZoomMove"
+          @pan="onZoomPan"
           @seek="seekMs"
           @hide="setZoomOpen(false)"
         />
@@ -589,14 +589,6 @@ function placeLine(from: number, ms: number): number {
   return to > from + 1 ? to - 1 : to === from + 1 ? from : to
 }
 
-/** Drag in the zoomed-in view: the line takes the new time. */
-function onZoomMove(line: number, ms: number) {
-  if (!quill.value) return
-  const at = placeLine(line, ms)
-  targetLine.value = at
-  showPinToast(`Moved “${snippet(lineTimes.value[at]?.text)}” to ${describeTime(ms).long}.`, undoLyricsEdit)
-}
-
 /** Tap a block: pick that line, and move the beat to it so it sits in the middle of the view. */
 function onZoomPick(line: number) {
   targetLine.value = line
@@ -705,7 +697,27 @@ function setZoomOpen(v: boolean) {
     // not remembered on this device
   }
 }
-const zoomRange = computed(() => zoomWindow(timing.value, nowMs.value))
+const followRange = computed(() => zoomWindow(timing.value, nowMs.value))
+// Dragging the zoomed-in view looks along the song without moving the beat.
+// It follows the playhead again when the beat is moved, or 3 s after the last
+// drag while the beat plays.
+const PAN_HOLD_MS = 3000
+const panW0 = ref<number | null>(null)
+let lastPanAt = 0
+const zoomRange = computed<[number, number]>(() => {
+  const [f0, f1] = followRange.value
+  if (panW0.value == null) return [f0, f1]
+  const len = f1 - f0
+  const w0 = Math.max(0, Math.min(panW0.value, Math.max(0, durationMs.value - len)))
+  return [w0, w0 + len]
+})
+function onZoomPan(w0: number) {
+  panW0.value = w0
+  lastPanAt = Date.now()
+}
+watch(nowMs, () => {
+  if (panW0.value != null && Date.now() - lastPanAt > PAN_HOLD_MS) panW0.value = null
+})
 const zoomTicks = computed(() => gridTicks(timing.value, zoomRange.value[0], zoomRange.value[1]))
 const zoomBlocks = computed(() => stripBlocks.value.map((b) => ({ ...b, text: lineTimes.value[b.line]?.text ?? '' })))
 
@@ -792,6 +804,7 @@ onUnmounted(() => {
 function seekMs(ms: number) {
   playerRef.value?.seekTo(ms / 1000)
   nowMs.value = ms
+  panW0.value = null // moving the beat brings the zoomed-in view back to it
 }
 
 function selectSection(s: Section) {
