@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 /*
  * Timed lyrics, Step A, in a real browser (demo mode, mock backend):
  * "Try new" turns on the timeline view, Pin places the outlined line at the
- * playhead, Undo reverts it, and "Back to classic" keeps the times.
+ * playhead, Undo reverts it, and switching back to classic (⋯ menu) keeps the times.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -15,6 +15,13 @@ async function openFirstSession(page: Page) {
 
 /** A lyric line inside the editor (not the same words in the Pin message). */
 const line = (page: Page, text: string) => page.locator('[data-testid="script-editor"] .ql-editor').getByText(text, { exact: true })
+
+/** Switch this device to the timeline view if it isn't already. */
+async function useTimeline(page: Page) {
+  const pill = page.getByTestId('editor-mode-toggle')
+  if (await pill.isVisible()) await pill.click()
+  await expect(pill).toHaveCount(0)
+}
 
 const lineTimes = (page: Page) =>
   page.evaluate(() =>
@@ -31,7 +38,7 @@ test('Try new: pin a line at the playhead, undo it, switch back to classic', asy
   await expect(page.getByTestId('pin-line')).toHaveCount(0) // classic: no Pin
 
   await toggle.click()
-  await expect(toggle).toHaveText(/Back to classic/)
+  await expect(toggle).toHaveCount(0) // the pill only shows in classic; classic is in the ⋯ menu now
   const pin = page.getByTestId('pin-line')
   await expect(pin).toBeVisible()
 
@@ -65,7 +72,13 @@ test('Try new: pin a line at the playhead, undo it, switch back to classic', asy
   // Pin again, then switch back to classic: the time stays in the document.
   await line(page, 'first timed line').click()
   await pin.click()
-  await toggle.click()
+  // The ⋯ menu opens above the timeline (it used to be hidden behind it).
+  await page.getByTestId('session-menu').click()
+  await expect(page.getByTestId('switch-to-classic')).toBeVisible()
+  const menuItem = (await page.getByTestId('switch-to-classic').boundingBox())!
+  const onTop = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-testid="switch-to-classic"]') != null, [menuItem.x + menuItem.width / 2, menuItem.y + menuItem.height / 2])
+  expect(onTop).toBe(true)
+  await page.getByTestId('switch-to-classic').click()
   await expect(toggle).toHaveText(/Try new/)
   await expect(page.getByTestId('line-time')).toHaveCount(0)
   lines = await lineTimes(page)
@@ -74,14 +87,13 @@ test('Try new: pin a line at the playhead, undo it, switch back to classic', asy
   // The choice is remembered on this device.
   await toggle.click()
   await page.reload()
-  await expect(page.getByTestId('editor-mode-toggle')).toHaveText(/Back to classic/, { timeout: 10_000 })
+  await expect(page.getByTestId('song-strip')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByTestId('editor-mode-toggle')).toHaveCount(0)
 })
 
 test('Return after a pinned line does not copy its time (real key press)', async ({ page }) => {
   await openFirstSession(page)
-  if (!(await page.getByTestId('editor-mode-toggle').textContent())?.includes('Back')) {
-    await page.getByTestId('editor-mode-toggle').click()
-  }
+  await useTimeline(page)
   const editor = page.locator('[data-testid="script-editor"] .ql-editor')
   await editor.click()
   await page.keyboard.press('Meta+ArrowDown')
@@ -101,9 +113,7 @@ test('Return after a pinned line does not copy its time (real key press)', async
 test('Step B: song strip scrubs, sections split the beat, Pin snaps to the section tempo', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 })
   await openFirstSession(page)
-  if (!(await page.getByTestId('editor-mode-toggle').textContent())?.includes('Back')) {
-    await page.getByTestId('editor-mode-toggle').click()
-  }
+  await useTimeline(page)
   const strip = page.getByTestId('song-strip')
   await expect(strip).toBeVisible({ timeout: 10_000 }) // shown once the beat's length is known
   const header = page.getByTestId('timeline-header')
@@ -174,9 +184,7 @@ async function expectReadable(page: Page, locator: ReturnType<Page['locator']>) 
 test('Step B review: tap a pinned line on the strip, move a section, one tempo for the song, lyrics follow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 })
   await openFirstSession(page)
-  if (!(await page.getByTestId('editor-mode-toggle').textContent())?.includes('Back')) {
-    await page.getByTestId('editor-mode-toggle').click()
-  }
+  await useTimeline(page)
   const strip = page.getByTestId('song-strip')
   await expect(strip).toBeVisible({ timeout: 10_000 })
   const at = async (f: number) => {
@@ -209,21 +217,24 @@ test('Step B review: tap a pinned line on the strip, move a section, one tempo f
   await page.getByTestId('sections-toggle').click() // close: nothing selected on the strip
   await expect(page.getByTestId('section-boundary')).toHaveCount(0)
   await page.getByTestId('sections-toggle').click() // reopen: Section 1 is still selected
-  await expect(page.getByTestId('section-boundary')).toHaveCount(1) // Section 1: only its end
+  await expect(page.getByTestId('section-boundary')).toHaveCount(2) // Section 1: its start (Intro) and its end
 
   // Move the section boundary from 40% to about 50% by dragging it.
-  const handle = page.getByTestId('section-boundary').first()
+  const handle = page.locator('[data-testid="section-boundary"][data-edge="end"]')
   const hb = (await handle.boundingBox())!
   const sb = (await strip.boundingBox())!
   await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
   await page.mouse.down()
   await page.mouse.move(sb.x + sb.width * 0.5, hb.y + hb.height / 2, { steps: 5 })
   await page.mouse.up()
-  await expect(page.getByTestId('pin-toast')).toContainText(/now starts at 1:(3|4)\d/) // 50% of 3:20 is 1:40
+  await expect(page.getByTestId('pin-toast')).toContainText(/is now 0:00–1:(3|4)\d/) // 50% of 3:20 is 1:40
   await page.getByTestId('pin-undo').click()
   await expect(handle).toHaveAttribute('aria-label', /now 1:2\d/) // back at 40% (1:20)
 
-  // Scroll away, then tap the pinned line's block: that line is picked and scrolled into view.
+  // Done with sections: close the panel (its grips go away), scroll away,
+  // then tap the pinned line's block: that line is picked and scrolled into view.
+  await page.getByTestId('sections-toggle').click()
+  await expect(page.getByTestId('section-boundary')).toHaveCount(0)
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
   const firstLine = ql.locator('> *').first()
   await at(0.025)
@@ -242,9 +253,7 @@ test('Step B review: tap a pinned line on the strip, move a section, one tempo f
 test('Step C: zoomed-in view shows bars around the playhead; drag a line to move it, by beats, with Undo', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 })
   await openFirstSession(page)
-  if (!(await page.getByTestId('editor-mode-toggle').textContent())?.includes('Back')) {
-    await page.getByTestId('editor-mode-toggle').click()
-  }
+  await useTimeline(page)
   const strip = page.getByTestId('song-strip')
   await expect(strip).toBeVisible({ timeout: 10_000 })
   const zoom = page.getByTestId('zoom-view')
@@ -294,8 +303,62 @@ test('Step C: zoomed-in view shows bars around the playhead; drag a line to move
   await expect(zoom).toHaveCount(0)
   await expect(page.getByTestId('zoom-toggle')).toContainText('Show zoomed-in view')
   await expect(page.getByTestId('strip-window')).toHaveCount(0)
+  await expect(page.getByText('drag the strip to scrub')).toHaveCount(0) // no instruction text anywhere
+  await expect(page.getByText(/ZOOMED IN/)).toHaveCount(0)
   await page.reload()
   await expect(page.getByTestId('zoom-toggle')).toContainText('Show zoomed-in view', { timeout: 10_000 })
   await page.getByTestId('zoom-toggle').click()
   await expect(page.getByTestId('zoom-view')).toBeVisible()
+})
+
+test('Edges: drag the first section’s start to make an Intro; tapping a block centres it in the zoomed-in view', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await openFirstSession(page)
+  await useTimeline(page)
+  const strip = page.getByTestId('song-strip')
+  await expect(strip).toBeVisible({ timeout: 10_000 })
+  const sb = (await strip.boundingBox())!
+
+  // One section for the whole song at 120 BPM (added within the song's first second).
+  await page.mouse.click(sb.x + 0.5, sb.y + sb.height / 2)
+  await page.getByTestId('sections-toggle').click()
+  await page.getByTestId('add-section').click()
+  await page.getByTestId('section-bpm').fill('120')
+  await page.getByTestId('section-bpm').press('Enter')
+  await expect(page.getByTestId('section-chip')).toHaveCount(1)
+
+  // Grips on both edges of the selected section, even at the song's start and end.
+  const start = page.locator('[data-testid="section-boundary"][data-edge="start"]')
+  await expect(start).toHaveAttribute('aria-label', /makes an Intro/)
+  await expect(page.locator('[data-testid="section-boundary"][data-edge="end"]')).toHaveAttribute('aria-label', /makes an Outro/)
+
+  // Drag the start to about 10%: an Intro appears before it.
+  const g = (await start.boundingBox())!
+  const s2 = (await strip.boundingBox())!
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(s2.x + s2.width * 0.1, g.y + g.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(page.getByTestId('pin-toast')).toContainText(/Added “Intro” \(0:00–0:(1|2)\d\)/)
+  await expect(page.getByTestId('section-chip')).toHaveCount(2)
+  await expect(page.getByTestId('section-chip').first()).toHaveText('Intro')
+  await page.getByTestId('pin-undo').click()
+  await expect(page.getByTestId('section-chip')).toHaveCount(1)
+
+  // Pin a line, scrub away, tap its block in the zoomed-in view: it lands in the middle.
+  await page.getByTestId('sections-toggle').click()
+  const ql = page.locator('[data-testid="script-editor"] .ql-editor')
+  const first = ql.locator('> *').first()
+  await page.mouse.click(s2.x + s2.width * 0.05, s2.y + s2.height / 2)
+  await first.click()
+  await page.getByTestId('pin-line').click()
+  const zoom = page.getByTestId('zoom-view')
+  const block = page.getByTestId('zoom-line').first()
+  await block.click()
+  const zb = (await zoom.boundingBox())!
+  const bb = (await block.boundingBox())!
+  const startPct = (bb.x - 2 - zb.x) / zb.width
+  expect(startPct).toBeGreaterThan(0.45)
+  expect(startPct).toBeLessThan(0.55)
+  await page.screenshot({ path: test.info().outputPath('edges.png') })
 })

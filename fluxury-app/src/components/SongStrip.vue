@@ -3,14 +3,7 @@
        is set, where lines are placed, and the playhead. Drag or tap to move the
        beat; drag the line between two sections to move where one starts. -->
   <div class="select-none">
-    <div class="flex items-center justify-between min-h-[26px]">
-      <span
-        class="text-[10px] tracking-wide text-slate-400 transition-opacity duration-500"
-        :class="hintSeen ? 'opacity-0' : 'opacity-100'"
-        :aria-hidden="hintSeen"
-      >
-        drag the strip to scrub
-      </span>
+    <div class="flex items-center justify-end min-h-[26px]">
       <slot name="right" />
     </div>
     <div ref="box" class="relative h-11">
@@ -107,24 +100,25 @@
            grabs one by accident. A coloured grip, unlike the white playhead. -->
       <button
         v-for="h in handles"
-        :key="'h' + h.index"
+        :key="h.edge"
         type="button"
         data-testid="section-boundary"
-        :aria-label="`Move where ${sections[h.index].name} starts (now ${fmt(sections[h.index].startMs)})`"
-        class="absolute top-0 bottom-0 w-7 -ml-3.5 cursor-ew-resize touch-none focus:outline-none group"
-        :style="{ left: pct(sections[h.index].startMs) + '%' }"
-        @pointerdown.stop="grab($event, h.index)"
+        :data-edge="h.edge"
+        :aria-label="h.label"
+        class="absolute top-0 bottom-0 cursor-ew-resize touch-none focus:outline-none group"
+        :style="{ left: `calc(${pct(h.ms)}% - ${h.shift}px)`, width: h.width + 'px' }"
+        @pointerdown.stop="grab($event, h.edge)"
         @pointermove="drag"
         @pointerup="release"
         @pointercancel="release"
-        @keydown.left.prevent="nudge(h.index, -1000)"
-        @keydown.right.prevent="nudge(h.index, 1000)"
+        @keydown.left.prevent="nudge(h.edge, h.ms - 1000)"
+        @keydown.right.prevent="nudge(h.edge, h.ms + 1000)"
       >
-        <span class="absolute left-1/2 top-0 bottom-0 -ml-[1.5px] w-[3px] rounded" :style="{ background: h.color }" />
+        <span class="absolute top-0 bottom-0 w-[3px] rounded" :style="{ left: h.shift - 1.5 + 'px', background: h.color }" />
         <span
-          class="absolute left-1/2 top-1/2 -ml-[7px] -mt-[9px] w-[14px] h-[18px] rounded-[4px] border-2 border-slate-900 shadow group-focus-visible:ring-2 group-focus-visible:ring-violet-300"
-          :class="{ 'scale-110': moving === h.index }"
-          :style="{ background: h.color }"
+          class="absolute top-1/2 -mt-[9px] w-[14px] h-[18px] rounded-[4px] border-2 border-slate-900 shadow group-focus-visible:ring-2 group-focus-visible:ring-violet-300"
+          :class="{ 'scale-110': moving === h.edge }"
+          :style="{ left: Math.min(Math.max(h.shift - 7, 0), h.width - 14) + 'px', background: h.color }"
         >
           <span class="absolute inset-x-[3px] top-[4px] bottom-[4px] border-x border-slate-900/60" />
         </span>
@@ -159,36 +153,43 @@ const emit = defineEmits<{
   seek: [ms: number]
   /** A tap (no drag) at this time. */
   tap: [ms: number]
-  'boundary-move': [index: number, ms: number]
-  'boundary-end': [index: number]
+  /** Dragging an edge of the selected section to `ms`. */
+  'edge-move': [edge: 'start' | 'end', ms: number]
+  'edge-end': [edge: 'start' | 'end']
 }>()
 
 const H = 44
-const HINT_KEY = 'fluxury.stripHintSeen'
 const box = ref<HTMLElement>()
-const hintSeen = ref(readHint())
 let press: { x: number; moved: boolean } | null = null
-const moving = ref<number | null>(null)
+const moving = ref<'start' | 'end' | null>(null)
 
-function readHint() {
-  try {
-    return localStorage.getItem(HINT_KEY) === '1'
-  } catch {
-    return false
-  }
-}
 
 const pct = (ms: number) => (props.durationMs > 0 ? (Math.min(Math.max(ms, 0), props.durationMs) / props.durationMs) * 100 : 0)
 const x = (ms: number) => pct(ms) * 10
 const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms / 1000) % 60)).padStart(2, '0')}`
 /** Only name sections wide enough to read (about 7% of the strip). */
 const labelled = computed(() => props.sections.filter((s) => pct(s.endMs - s.startMs) >= 7))
-/** Handles for where the selected section starts and where it ends (the next one starts). */
+/**
+ * Grips on both edges of the selected section. The song's own start and end
+ * can be dragged too: that makes an Intro or Outro. Keyed by edge, so the grip
+ * under the finger survives the Intro appearing mid-drag. Kept inside the
+ * strip at its two ends (`shift` = where the line sits inside the grip). At the
+ * song's own start and end the grip is narrower (16px instead of 28), so it
+ * covers little of the strip that a tap would use to jump near the start or end.
+ */
 const handles = computed(() => {
-  const i = props.sections.findIndex((s) => s.id === props.selectedId)
-  if (i < 0) return []
-  const color = props.sections[i].color
-  return [i, i + 1].filter((k) => k >= 1 && k < props.sections.length).map((index) => ({ index, color }))
+  const s = props.sections.find((x) => x.id === props.selectedId)
+  if (!s) return []
+  const edge = (e: 'start' | 'end', ms: number) => {
+    const p = pct(ms)
+    const width = p <= 0 || p >= 100 ? 16 : 28
+    const shift = p <= 0 ? 0 : p >= 100 ? width : width / 2
+    const label = e === 'start'
+      ? (ms <= 0 ? `Drag to start ${s.name} later (makes an Intro)` : `Move where ${s.name} starts (now ${fmt(ms)})`)
+      : (ms >= props.durationMs ? `Drag to end ${s.name} earlier (makes an Outro)` : `Move where ${s.name} ends (now ${fmt(ms)})`)
+    return { edge: e, ms, shift, width, label, color: s.color }
+  }
+  return [edge('start', s.startMs), edge('end', s.endMs)]
 })
 
 function msAt(e: PointerEvent) {
@@ -213,38 +214,27 @@ function up(e: PointerEvent) {
   const wasTap = !press.moved
   press = null
   if (wasTap) emit('tap', msAt(e))
-  else markHintSeen()
 }
 function cancel() {
   press = null
 }
 
-function markHintSeen() {
-  if (hintSeen.value) return
-  hintSeen.value = true
-  try {
-    localStorage.setItem(HINT_KEY, '1')
-  } catch {
-    // not remembered; the hint shows again next visit
-  }
-}
-
-function grab(e: PointerEvent, index: number) {
+function grab(e: PointerEvent, edge: 'start' | 'end') {
   const el = e.currentTarget as Element
   el.setPointerCapture(e.pointerId)
-  moving.value = index
+  moving.value = edge
 }
 function drag(e: PointerEvent) {
-  if (moving.value != null) emit('boundary-move', moving.value, msAt(e))
+  if (moving.value != null) emit('edge-move', moving.value, msAt(e))
 }
 function release() {
   if (moving.value == null) return
-  const i = moving.value
+  const edge = moving.value
   moving.value = null
-  emit('boundary-end', i)
+  emit('edge-end', edge)
 }
-function nudge(index: number, deltaMs: number) {
-  emit('boundary-move', index, props.sections[index].startMs + deltaMs)
-  emit('boundary-end', index)
+function nudge(edge: 'start' | 'end', ms: number) {
+  emit('edge-move', edge, ms)
+  emit('edge-end', edge)
 }
 </script>

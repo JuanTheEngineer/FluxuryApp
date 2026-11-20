@@ -69,7 +69,7 @@
 
         <!-- Classic / timeline view. Same lyrics either way; remembered on this device. -->
         <button
-          v-if="authStore.isAuthenticated"
+          v-if="authStore.isAuthenticated && !timelineOn"
           type="button"
           data-testid="editor-mode-toggle"
           :aria-pressed="timelineOn"
@@ -84,7 +84,7 @@
 
         <!-- Session options (⋯). Delete lives here, one tap away from the
              writing area rather than a bare trash icon next to it. -->
-        <div v-if="authStore.isAuthenticated" ref="menuRoot" class="relative flex-shrink-0">
+        <div v-if="authStore.isAuthenticated" ref="menuRoot" class="relative flex-shrink-0" :class="{ 'ml-auto': timelineOn }">
           <button
             type="button"
             data-testid="session-menu"
@@ -103,8 +103,18 @@
             role="menu"
             aria-label="Session options"
             @keydown.esc.stop="closeMenu(true)"
-            class="absolute right-0 mt-1 w-48 z-30 rounded-lg border border-slate-700 bg-surface-elevated text-slate-100 shadow-xl py-1"
+            class="absolute right-0 mt-1 w-56 z-40 rounded-lg border border-slate-700 bg-surface-elevated text-slate-100 shadow-xl py-1"
           >
+            <button
+              v-if="timelineOn"
+              type="button"
+              role="menuitem"
+              data-testid="switch-to-classic"
+              @click="closeMenu(); toggleEditorMode()"
+              class="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700/60 focus:bg-slate-700/60 focus:outline-none"
+            >
+              Switch to classic editor
+            </button>
             <button
               ref="deleteItem"
               type="button"
@@ -202,8 +212,8 @@
           :window-range="zoomOpen ? zoomRange : null"
           @seek="seekMs"
           @tap="onStripTap"
-          @boundary-move="onBoundaryMove"
-          @boundary-end="onBoundaryEnd"
+          @edge-move="onEdgeMove"
+          @edge-end="onEdgeEnd"
         >
           <template #right>
             <div class="flex items-center gap-2 text-[11px]">
@@ -385,7 +395,7 @@ import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, tim
 import { getEditorMode, setEditorMode, type EditorMode } from '@/services/editorMode'
 import {
   emptyTiming, decodeTiming, splitAt, removeSection, updateSection, applyTempoToAll,
-  snap, positionOf, sectionAt, setTempo, moveBoundary, barLines, zoomWindow, gridTicks, type Timing, type Section, type SectionEdit,
+  snap, positionOf, sectionAt, setTempo, moveBoundary, withIntro, withOutro, barLines, zoomWindow, gridTicks, type Timing, type Section, type SectionEdit,
 } from '@/services/timing'
 import SongStrip from '@/components/SongStrip.vue'
 import SectionPanel from '@/components/SectionPanel.vue'
@@ -587,8 +597,11 @@ function onZoomMove(line: number, ms: number) {
   showPinToast(`Moved “${snippet(lineTimes.value[at]?.text)}” to ${describeTime(ms).long}.`, undoLyricsEdit)
 }
 
+/** Tap a block: pick that line, and move the beat to it so it sits in the middle of the view. */
 function onZoomPick(line: number) {
   targetLine.value = line
+  const ms = lineTimes.value[line]?.timeMs
+  if (ms != null) seekMs(ms)
   followTo(line, true)
 }
 
@@ -711,19 +724,30 @@ function onStripTap(ms: number) {
   if (s && sectionsOpen.value) selectedSectionId.value = s.id
 }
 
-let boundaryBefore: Timing | null = null
-function onBoundaryMove(index: number, ms: number) {
-  boundaryBefore ??= timing.value
-  // Shown live while dragging; stored once on release.
-  timing.value = moveBoundary(timing.value, index, ms)
+// Dragging an edge of the selected section. Always computed from the timing
+// as it was when the drag began, shown live, stored once on release.
+let edgeBefore: Timing | null = null
+function onEdgeMove(edge: 'start' | 'end', ms: number) {
+  const base = (edgeBefore ??= timing.value)
+  const i = base.sections.findIndex((s) => s.id === selectedSectionId.value)
+  if (i < 0) return
+  const last = base.sections.length - 1
+  timing.value =
+    edge === 'start'
+      ? i === 0 ? withIntro(base, ms) : moveBoundary(base, i, ms)
+      : i === last ? withOutro(base, ms) : moveBoundary(base, i + 1, ms)
 }
-function onBoundaryEnd(index: number) {
-  const before = boundaryBefore
-  boundaryBefore = null
-  if (!before) return
-  const moved = timing.value.sections[index]
+function onEdgeEnd() {
+  const before = edgeBefore
+  edgeBefore = null
+  if (!before || timing.value === before) return
   commitTiming(timing.value)
-  showPinToast(`“${moved.name}” now starts at ${fmtMs(moved.startMs)}.`, () => commitTiming(before))
+  const added = timing.value.sections.find((s) => !before.sections.some((b) => b.id === s.id))
+  const sel = timing.value.sections.find((s) => s.id === selectedSectionId.value)
+  const text = added
+    ? `Added “${added.name}” (${fmtMs(added.startMs)}–${fmtMs(added.endMs)}).`
+    : `“${sel?.name}” is now ${fmtMs(sel?.startMs ?? 0)}–${fmtMs(sel?.endMs ?? 0)}.`
+  showPinToast(text, () => commitTiming(before))
 }
 
 function setSectionTempo(id: string, bpm: number | null) {

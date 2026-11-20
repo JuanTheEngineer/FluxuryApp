@@ -2,23 +2,13 @@
   <!-- A few bars around the playhead: the beat grid and the placed lines as
        blocks. Drag a block to move its line in time (snaps to the beat); tap a
        block to pick that line; tap empty space to move the beat there. -->
-  <div class="mt-2">
-    <div class="flex items-center justify-between">
-      <span class="text-[10px] tracking-wide text-slate-400">ZOOMED IN · drag a line to move it</span>
-      <button
-        type="button"
-        data-testid="zoom-toggle"
-        :aria-expanded="true"
-        class="text-[11px] text-slate-300 hover:text-slate-100 px-1"
-        @click="emit('hide')"
-      >
-        Hide ▴
-      </button>
-    </div>
+  <!-- No instructions, like the strip: the blocks look draggable and the grip cursor says so.
+       The hide button sits in its own column, so it never covers a line. -->
+  <div class="mt-2 flex items-stretch gap-1">
     <div
       ref="box"
       data-testid="zoom-view"
-      class="relative h-[72px] mt-1 rounded-lg bg-[#111c33] overflow-hidden touch-none select-none cursor-pointer"
+      class="relative flex-1 min-w-0 h-[72px] rounded-lg bg-[#111c33] overflow-hidden touch-none select-none cursor-pointer"
       @pointerdown="downEmpty"
     >
       <!-- section colour along the top -->
@@ -69,6 +59,17 @@
       </div>
       <div class="absolute top-0 bottom-0 w-0.5 bg-slate-50 pointer-events-none" :style="{ left: pct(nowMs) + '%' }" />
     </div>
+    <button
+      type="button"
+      data-testid="zoom-toggle"
+      :aria-expanded="true"
+      aria-label="Hide the zoomed-in view"
+      title="Hide the zoomed-in view"
+      class="flex-none w-7 rounded-lg text-[12px] text-slate-400 bg-[#111c33] hover:text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+      @click="emit('hide')"
+    >
+      ▴
+    </button>
   </div>
 </template>
 

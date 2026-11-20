@@ -187,6 +187,34 @@ export function moveBoundary(t: Timing, index: number, ms: number): Timing {
   return { ...t, sections }
 }
 
+/** Grey, quiet colour for an Intro or Outro made by dragging: "nothing much here". */
+export const QUIET_COLOR = '#64748b'
+
+/**
+ * Drag the start of the FIRST section later: the part before it becomes an
+ * "Intro" (the song stays fully covered). Same tempo as the section it came
+ * from. Unchanged if the drag is too small or there are already 12 sections.
+ */
+export function withIntro(t: Timing, ms: number): Timing {
+  const first = t.sections[0]
+  if (!first || t.sections.length >= MAX_SECTIONS) return t
+  const at = Math.round(Math.min(ms, first.endMs - MIN_SECTION_MS))
+  if (at < MIN_SECTION_MS) return t
+  const intro: Section = { ...first, id: newId(), name: 'Intro', startMs: 0, endMs: at, color: QUIET_COLOR, source: 'user' }
+  return { ...t, sections: [intro, { ...first, startMs: at }, ...t.sections.slice(1)] }
+}
+
+/** Drag the end of the LAST section earlier: the part after it becomes an "Outro". */
+export function withOutro(t: Timing, ms: number): Timing {
+  const n = t.sections.length
+  const last = t.sections[n - 1]
+  if (!last || n >= MAX_SECTIONS) return t
+  const at = Math.round(Math.max(ms, last.startMs + MIN_SECTION_MS))
+  if (t.durationMs - at < MIN_SECTION_MS) return t
+  const outro: Section = { ...last, id: newId(), name: 'Outro', startMs: at, endMs: t.durationMs, color: QUIET_COLOR, source: 'user' }
+  return { ...t, sections: [...t.sections.slice(0, n - 1), { ...last, endMs: at }, outro] }
+}
+
 /** Bar-line times inside each section that has a tempo, for drawing the grid. */
 export function barLines(t: Timing, minGapMs: number): number[] {
   const out: number[] = []
@@ -264,10 +292,11 @@ export const ZOOM_BARS = 4
 export const ZOOM_NO_TEMPO_MS = 8000
 
 /**
- * The stretch of the beat the zoomed-in view shows: 4 bars, starting one bar
- * before the playhead's bar, so the playhead sits in the second bar and the
- * view steps a bar at a time (it doesn't slide every frame). Without a tempo,
- * 8 seconds stepping every 2. Never before 0 or past the end.
+ * The stretch of the beat the zoomed-in view shows: 4 bars, starting two bars
+ * before the playhead's bar, so a line on a bar start (where Pin puts most
+ * lines) sits in the middle. It steps a bar at a time (it doesn't slide every
+ * frame). Without a tempo, 8 seconds stepping every 2. Never before 0 or past
+ * the end.
  */
 export function zoomWindow(t: Timing, nowMs: number): [number, number] {
   const s = sectionAt(t, nowMs)
@@ -277,10 +306,10 @@ export function zoomWindow(t: Timing, nowMs: number): [number, number] {
   if (s && b) {
     const bar = b * s.beatsPerBar
     len = bar * ZOOM_BARS
-    w0 = Math.max(s.startMs, s.startMs + (Math.floor((nowMs - s.startMs) / bar) - 1) * bar)
+    w0 = s.startMs + (Math.floor((nowMs - s.startMs) / bar) - 2) * bar
   } else {
     len = ZOOM_NO_TEMPO_MS
-    w0 = (Math.floor(nowMs / 2000) - 1) * 2000
+    w0 = (Math.floor(nowMs / 2000) - 2) * 2000
   }
   const end = t.durationMs > 0 ? t.durationMs : w0 + len
   w0 = Math.max(0, Math.min(w0, end - len))

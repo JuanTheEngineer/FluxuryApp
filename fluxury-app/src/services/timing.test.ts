@@ -204,10 +204,10 @@ describe('zoomed-in view', () => {
   t = setTempo(t, t.sections[1].id, 120) // bars of 2 s in both sections
   t = { ...t, sections: t.sections.map((s, i) => (i === 1 ? { ...s, name: 'Verse 1' } : s)) }
 
-  it('shows 4 bars, starting one bar before the playhead’s bar', () => {
-    expect(zoomWindow(t, 15_000)).toEqual([12_000, 20_000]) // playhead in bar 3 of Verse 1 (14-16 s)
-    expect(zoomWindow(t, 15_900)).toEqual([12_000, 20_000]) // steps by bars, doesn't slide
-    expect(zoomWindow(t, 16_100)).toEqual([14_000, 22_000])
+  it('shows 4 bars with the playhead’s bar in the middle (a line on a bar start is centred)', () => {
+    expect(zoomWindow(t, 14_000)).toEqual([10_000, 18_000]) // 14 s is exactly the middle
+    expect(zoomWindow(t, 15_900)).toEqual([10_000, 18_000]) // steps by bars, doesn't slide
+    expect(zoomWindow(t, 16_100)).toEqual([12_000, 20_000])
   })
 
   it('never starts before 0 or runs past the end', () => {
@@ -217,7 +217,7 @@ describe('zoomed-in view', () => {
 
   it('without a tempo: 8 seconds, stepping every 2', () => {
     const plain = emptyTiming(DUR)
-    expect(zoomWindow(plain, 9_500)).toEqual([6000, 14_000])
+    expect(zoomWindow(plain, 9_500)).toEqual([4000, 12_000])
   })
 
   it('ticks: beats, bar lines with labels, and the section name at its first bar', () => {
@@ -236,5 +236,39 @@ describe('zoomed-in view', () => {
   it('without a tempo: a tick every second, labelled every 2', () => {
     const ticks = gridTicks(emptyTiming(DUR), 6000, 9000)
     expect(ticks.map((k) => [k.ms, k.label])).toEqual([[6000, '0:06'], [7000, null], [8000, '0:08']])
+  })
+})
+
+import { withIntro, withOutro, QUIET_COLOR } from './timing'
+
+describe('Intro and Outro by dragging the song’s edges', () => {
+  it('dragging the first section’s start makes a grey Intro before it, same tempo', () => {
+    const base = split(emptyTiming(DUR), 60_000).timing
+    const t = setTempo(base, base.sections[0].id, 90)
+    const first = t.sections[0]
+    const w = withIntro(t, 12_000)
+    expect(w.sections.map((s) => [s.name, s.startMs, s.endMs])).toEqual([['Intro', 0, 12_000], [first.name, 12_000, 60_000], [t.sections[1].name, 60_000, DUR]])
+    expect(w.sections[0]).toMatchObject({ color: QUIET_COLOR, bpm: 90 })
+    expect(w.sections[1].id).toBe(first.id)
+    expect(contiguous(w)).toBe(true)
+  })
+  it('dragging the last section’s end makes an Outro after it', () => {
+    const t = split(emptyTiming(DUR), 60_000).timing
+    const w = withOutro(t, 180_000)
+    expect(w.sections.map((s) => [s.name, s.startMs, s.endMs]).at(-1)).toEqual(['Outro', 180_000, DUR])
+    expect(w.sections.at(-2)!.endMs).toBe(180_000)
+    expect(contiguous(w)).toBe(true)
+  })
+  it('a tiny drag, or 12 sections already, changes nothing', () => {
+    const t = split(emptyTiming(DUR), 60_000).timing
+    expect(withIntro(t, 400)).toBe(t)
+    expect(withOutro(t, DUR - 400)).toBe(t)
+    let full = t
+    for (let k = 1; full.sections.length < MAX_SECTIONS; k++) full = split(full, 60_000 + k * 10_000).timing
+    expect(withIntro(full, 12_000)).toBe(full)
+  })
+  it('never squeezes the section below a second', () => {
+    const t = split(emptyTiming(DUR), 60_000).timing
+    expect(withIntro(t, 59_900).sections[1].startMs).toBe(60_000 - MIN_SECTION_MS)
   })
 })
