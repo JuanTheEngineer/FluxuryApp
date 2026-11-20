@@ -126,3 +126,26 @@ Tests: 301 unit and integration tests pass (15 new for Step A), and 2 new browse
 Bug found by the browser test and fixed: tapping a line where the cursor already was fires no selection event, so Pin placed the wrong line.
 
 Open for Juan's review: the Pin message sits just above the player, over the bottom lines of lyrics, for 5 seconds. The old smoke test `Browse beats → start session` fails on its own; it looks for a "Write to this beat" button that moved into the player in `4d12835`.
+
+## Step B status (2026-11-20)
+
+Built and tested locally, not deployed.
+- **Song strip** (`components/SongStrip.vue`) at the top of the timeline view. It shows the whole beat: section colours, a block for each placed line, and the playhead. Tap or drag to move the beat. It stays in view under the app header while you scroll. A "drag the strip to scrub" hint shows until the first drag, then never again on that device. Beside it: where the beat is ("Verse 1 · bar 6 · beat 1") and a **Sections ▾** button.
+- **Sections panel** (`components/SectionPanel.vue`), hidden until Sections is tapped. Chips for each section (tap to select and jump to its start), **+ section here** (splits at the playhead), and for the selected section: name, tempo, **Tap** tempo, beats per bar, colour, **Use this tempo everywhere**, and **Remove**. It counts sections out of 12 and tempo changes, amber above 4.
+- **Pin snaps** to the bar (within half a beat) or the nearest beat of the section's tempo. Without a tempo it doesn't snap.
+- **Line labels** show the time and "bar N" in the section's colour.
+- Undo messages for Pin, Unpin, adding a section, tempo to all and removing a section.
+- Stored as `timing` in script.json through `sessionStore.setScriptExtra`, saved by autosave with the same conflict detection as the lyrics. Read back through `decodeTiming`, which doesn't trust the stored file.
+
+Model change from the design: a section's `bpm` may be **null** (not set yet). Nobody knows the tempo before the writer sets it, and there is no auto-detection yet.
+
+Deliberately left out:
+- **Loudness shape on the strip.** It needs the whole beat decoded in the browser (tens of MB of memory on a phone), and iPhone Safari may not decode the WebM/Opus beats.
+- **Section headings between lyric lines.** They would need extra space inside Quill's own elements. The section shows instead as the colour and "bar N" of each line's label.
+- **The beat-change warning (rule 8).** The app has no way to change a session's beat yet. It gets built together with that.
+
+Gap: section changes are saved to the server only, not to the local draft. If the browser closes within about 1.5 s of a section edit, while offline, that edit is lost. Lyrics and line times are not affected.
+
+Layout fix found by the browser test: `<main>` had `overflow-y-auto` but never scrolls (the window does), which stops sticky elements inside it. Changed to `overflow-x-clip` in `layouts/DefaultLayout.vue`.
+
+Tests: 317 unit and integration tests pass (16 new: the section model, snapping, tap tempo, untrusted data, the store). 3 browser tests pass, including a Step B test that scrubs, adds a section at 120 BPM, pins a line that lands at Verse 1 bar 6 (1:00), checks the strip stays in view, and removes a section with Undo.
