@@ -108,8 +108,14 @@ export function attachGutter(quill, gutterEl, sectionStarts) {
         const m = document.createElement('div')
         m.className = 'mark'
         m.dataset.line = String(i)
-        m.style.cssText = `position:absolute;left:0;height:6px;width:6px;border-radius:3px;background:#8b5cf6;top:${r.top - base.top + 6}px`
+        m.style.cssText = `position:absolute;left:0;height:8px;width:8px;border-radius:4px;background:#8b5cf6;top:${r.top - base.top + 6}px`
         gutterEl.appendChild(m)
+        const ms = Number(line.domNode.getAttribute('data-time'))
+        const t = document.createElement('div')
+        t.className = 'tlabel'
+        t.textContent = Math.floor(ms / 60000) + ':' + String(Math.floor((ms / 1000) % 60)).padStart(2, '0')
+        t.style.top = `${r.top - base.top + 2}px`
+        gutterEl.appendChild(t)
       }
     })
   }

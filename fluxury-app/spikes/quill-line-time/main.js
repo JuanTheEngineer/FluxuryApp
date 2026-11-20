@@ -23,6 +23,20 @@ const gutter = document.getElementById('gutter')
 const sectionStarts = new Set([0, 3])
 const render = attachGutter(quill, gutter, sectionStarts)
 
+// Plain readout of every line and its stored time, so the Return-key check needs no guessing.
+const fmt = (ms) => Math.floor(ms / 60000) + ':' + String(Math.floor((ms / 1000) % 60)).padStart(2, '0')
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
+const showList = () => {
+  document.getElementById('list').innerHTML = readLines(quill)
+    .map((l, i) => {
+      const t = l.timeMs == null ? '<span class="t none">none</span>' : `<span class="t">● ${fmt(l.timeMs)}</span>`
+      return `<div>${t}${i + 1}. ${l.text ? esc(l.text) : '<span class="none">(empty line)</span>'}</div>`
+    })
+    .join('')
+}
+quill.on('text-change', showList)
+showList()
+
 window.spike = {
   quill,
   render,

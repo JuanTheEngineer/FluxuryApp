@@ -5,17 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Quill line-time spike</title>
     <style>
-      body { margin: 0; font-family: system-ui, sans-serif; }
-      #wrap { display: flex; }
-      #gutter { position: relative; width: 24px; flex: none; height: 300px; overflow: hidden; }
-      #gutter .heading { font-size: 9px; color: #64748b; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+      header { padding: 14px 14px 6px; }
+      header h1 { font-size: 16px; margin: 0 0 4px; color: #f8fafc; }
+      header p { font-size: 13px; margin: 4px 0; color: #cbd5e1; line-height: 1.4; }
+      header b { color: #c4b5fd; }
+      #wrap { display: flex; margin: 0 10px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; }
+      #gutter { position: relative; width: 64px; flex: none; height: 300px; overflow: hidden; }
+      #gutter .heading { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: #94a3b8; padding-left: 8px; display: flex; align-items: flex-end; }
+      #gutter .mark { margin-left: 8px; }
+      #gutter .tlabel { position: absolute; left: 20px; font-size: 11px; color: #c4b5fd; font-variant-numeric: tabular-nums; }
       #ed { flex: 1; min-width: 0; }
-      #ed .ql-container { height: 300px; }
+      #ed .ql-container, #ed .ql-container.ql-snow { height: 300px; border: none; font-size: 15px; color: #e2e8f0; }
+      #ed .ql-editor { padding-left: 4px; }
+      #out { margin: 10px; padding: 10px; background: #111c33; border: 1px solid #334155; border-radius: 10px; font-size: 12px; }
+      #out h2 { font-size: 11px; letter-spacing: .05em; color: #94a3b8; margin: 0 0 6px; }
+      #out div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #out .t { display: inline-block; width: 48px; color: #c4b5fd; font-variant-numeric: tabular-nums; }
+      #out .none { color: #475569; }
       #scratch { display: none; }
     </style>
   </head>
   <body>
+    <header>
+      <h1>Test page: does each line keep its own time?</h1>
+      <p>This is not the demo. It only tests the lyrics editor. A <b>purple dot</b> means that line is pinned to a time in the beat.</p>
+      <p>Try it: tap the end of the first line and press <b>Return</b>. The dot should stay on the first line, and the new empty line should have none. The list below updates as you type.</p>
+    </header>
     <div id="wrap"><div id="gutter"></div><div id="ed"></div></div>
+    <div id="out"><h2>EACH LINE AND ITS TIME</h2><div id="list"></div></div>
     <div id="scratch"></div>
     <script type="module" src="./main.js"></script>
   </body>
