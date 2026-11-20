@@ -66,7 +66,7 @@ I tested the current editor with a delta that carries a `time` attribute. It sil
 5. **Switching.** The switch saves pending edits first (autosave flush), then loads the session in the other editor. It follows the usual `If-Match` chain, so a stale tab still gets the conflict banner.
 6. **The switch is a per-device setting**, stored in the browser (`editorMode`: `classic` or `timeline`), default `classic`. A "Try new" button in a session turns it on and "Back to classic" turns it off. No backend change and no effect on other devices.
 7. **Sessions without timing** open in the new editor with empty sections and no placed lines. The first section the user adds, or an auto-detect result later, fills it.
-8. **If the session's beat changes**, line times are kept and sections are reset to one section covering the new beat. (Open question below.)
+8. **If the session's beat changes**, line times are kept and sections are reset to one section covering the new beat. Juan's rule (2026-11-19): **before the switch is allowed, the user is told what will happen** (how many lines are placed, that their times now point into a different beat, that sections reset), with a clear cancel. Only shown when the session has placed lines or sections, so plain sessions switch as today.
 
 ## Release order
 
@@ -92,8 +92,17 @@ Step A onward:
 - Two tabs, one in each editor, produce the conflict banner and not a silent overwrite.
 - Beta test: add timed lines, reload, switch editors, reload.
 
-## Open questions
+## Decisions (2026-11-19)
 
-1. When a session's beat changes: keep the line times and reset the sections (default above), or clear everything?
-2. Should "Try new" be remembered per device (default above), or per session?
-3. Does the classic editor need any hint that lines have times, or stay silent? Default: silent.
+Juan accepted the defaults: keep times and reset sections on a beat change (with the warning in rule 8), "Try new" remembered per device, and no hint in the classic editor.
+
+## Step 0 status (2026-11-19)
+
+Built, not deployed:
+- `src/services/lineTime.ts` registers the `time` attribute and the Enter and paste guards. The classic editor uses it.
+- `script.json` saves now send back every field the editor doesn't edit (`extras` in `services/resume.ts`, `scriptExtras` in the session store). "Use latest" on a conflict adopts the latest copy's extras, the "(my version)" copy keeps this copy's, and "keep mine" keeps all of this copy.
+- 12 new tests. With the Enter guard switched off, the 3 Enter tests fail, so they test the real thing.
+
+Known gap: a browser still running the old app until it refreshes can drop times. No session has times yet, so nothing can be lost before Step A.
+
+Classic "keep mine" also overwrites the other copy's line times and sections, by the same rule as its lyrics. The overwritten version stays in S3 version history.
