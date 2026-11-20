@@ -195,10 +195,21 @@ test('Step B review: tap a pinned line on the strip, move a section, one tempo f
   await page.getByTestId('section-chip').first().click()
   await expect(page.getByTestId('section-bpm')).toHaveValue('100')
 
+  // An empty line can't be pinned.
+  const blank = ql.locator('> *').filter({ hasText: /^$/ }).first()
+  await blank.click()
+  await expect(page.getByTestId('pin-line')).toBeDisabled()
+
   // Pin the first lyric line near the start, so the strip has a block there.
   await at(0.02)
   await ql.locator('> *').first().click()
   await page.getByTestId('pin-line').click()
+
+  // Boundaries can only be dragged for the selected section.
+  await page.getByTestId('sections-toggle').click() // close: nothing selected on the strip
+  await expect(page.getByTestId('section-boundary')).toHaveCount(0)
+  await page.getByTestId('sections-toggle').click() // reopen: Section 1 is still selected
+  await expect(page.getByTestId('section-boundary')).toHaveCount(1) // Section 1: only its end
 
   // Move the section boundary from 40% to about 50% by dragging it.
   const handle = page.getByTestId('section-boundary').first()

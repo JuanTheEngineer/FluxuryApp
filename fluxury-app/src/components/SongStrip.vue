@@ -90,26 +90,31 @@
       >
         {{ s.name }}
       </span>
-      <!-- Section boundaries: a wide invisible handle around each line -->
+      <!-- Boundaries of the SELECTED section only, so a tap on the strip never
+           grabs one by accident. A coloured grip, unlike the white playhead. -->
       <button
-        v-for="(s, i) in sections.slice(1)"
-        :key="'h' + s.id"
+        v-for="h in handles"
+        :key="'h' + h.index"
         type="button"
         data-testid="section-boundary"
-        :aria-label="`Move where ${s.name} starts (now ${fmt(s.startMs)})`"
-        class="absolute top-0 bottom-0 w-6 -ml-3 cursor-ew-resize touch-none group focus:outline-none"
-        :style="{ left: pct(s.startMs) + '%' }"
-        @pointerdown.stop="grab($event, i + 1)"
+        :aria-label="`Move where ${sections[h.index].name} starts (now ${fmt(sections[h.index].startMs)})`"
+        class="absolute top-0 bottom-0 w-7 -ml-3.5 cursor-ew-resize touch-none focus:outline-none group"
+        :style="{ left: pct(sections[h.index].startMs) + '%' }"
+        @pointerdown.stop="grab($event, h.index)"
         @pointermove="drag"
         @pointerup="release"
         @pointercancel="release"
-        @keydown.left.prevent="nudge(i + 1, -1000)"
-        @keydown.right.prevent="nudge(i + 1, 1000)"
+        @keydown.left.prevent="nudge(h.index, -1000)"
+        @keydown.right.prevent="nudge(h.index, 1000)"
       >
+        <span class="absolute left-1/2 top-0 bottom-0 -ml-[1.5px] w-[3px] rounded" :style="{ background: h.color }" />
         <span
-          class="absolute left-1/2 top-0 bottom-0 -ml-px w-0.5 rounded group-hover:bg-slate-100 group-focus-visible:bg-violet-300"
-          :class="moving === i + 1 ? 'bg-slate-100' : 'bg-slate-400/70'"
-        />
+          class="absolute left-1/2 top-1/2 -ml-[7px] -mt-[9px] w-[14px] h-[18px] rounded-[4px] border-2 border-slate-900 shadow group-focus-visible:ring-2 group-focus-visible:ring-violet-300"
+          :class="{ 'scale-110': moving === h.index }"
+          :style="{ background: h.color }"
+        >
+          <span class="absolute inset-x-[3px] top-[4px] bottom-[4px] border-x border-slate-900/60" />
+        </span>
       </button>
     </div>
   </div>
@@ -131,6 +136,8 @@ const props = defineProps<{
   currentId: string | null
   /** The line Pin will place, outlined. */
   targetLine: number | null
+  /** The section being edited: only its boundaries can be dragged. */
+  selectedId: string | null
 }>()
 const emit = defineEmits<{
   /** While scrubbing. */
@@ -161,6 +168,13 @@ const x = (ms: number) => pct(ms) * 10
 const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms / 1000) % 60)).padStart(2, '0')}`
 /** Only name sections wide enough to read (about 7% of the strip). */
 const labelled = computed(() => props.sections.filter((s) => pct(s.endMs - s.startMs) >= 7))
+/** Handles for where the selected section starts and where it ends (the next one starts). */
+const handles = computed(() => {
+  const i = props.sections.findIndex((s) => s.id === props.selectedId)
+  if (i < 0) return []
+  const color = props.sections[i].color
+  return [i, i + 1].filter((k) => k >= 1 && k < props.sections.length).map((index) => ({ index, color }))
+})
 
 function msAt(e: PointerEvent) {
   const r = box.value!.getBoundingClientRect()

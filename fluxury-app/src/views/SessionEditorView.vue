@@ -198,6 +198,7 @@
           :blocks="stripBlocks"
           :current-id="nowPos?.section.id ?? null"
           :target-line="targetLine"
+          :selected-id="sectionsOpen ? selectedSectionId : null"
           @seek="seekMs"
           @tap="onStripTap"
           @boundary-move="onBoundaryMove"
@@ -307,8 +308,8 @@
         <button
           type="button"
           data-testid="pin-line"
-          :disabled="targetLine == null"
-          :title="targetLine == null ? 'Write a line first' : 'Pin the outlined line where the beat is now'"
+          :disabled="!targetHasText"
+          :title="targetLine == null ? 'Write a line first' : !targetHasText ? 'Empty lines are spacing; they can’t be pinned' : 'Pin the outlined line where the beat is now'"
           class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-400 disabled:opacity-40 transition-colors"
           @click="pinTarget"
         >
@@ -472,6 +473,8 @@ const pinToast = ref<{ text: string; undo?: () => void } | null>(null)
 let pinToastTimer: ReturnType<typeof setTimeout> | undefined
 
 const playingIdx = computed(() => playingLine(lineTimes.value, nowMs.value))
+/** Blank lines are spacing between verses, not lyrics: they can't be pinned. */
+const targetHasText = computed(() => targetLine.value != null && !!lineTimes.value[targetLine.value]?.text.trim())
 const targetIsPinned = computed(() => targetLine.value != null && lineTimes.value[targetLine.value]?.timeMs != null)
 
 function toggleEditorMode() {
@@ -524,7 +527,7 @@ function showPinToast(text: string, undo?: () => void) {
 function pinTarget() {
   const q = quill.value
   const from = targetLine.value
-  if (!q || from == null || !playerRef.value) return
+  if (!q || from == null || !playerRef.value || !targetHasText.value) return
   // Snaps to the bar or beat when the section has a tempo (people tap late and unevenly).
   const ms = snapMs(Math.round(playerRef.value.getPosition() * 1000))
   // One Undo reverts exactly this pin (and its move), never earlier typing.
