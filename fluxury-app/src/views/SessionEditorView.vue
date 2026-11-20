@@ -239,6 +239,7 @@ import { useConnectivity } from '@/composables/useConnectivity'
 import { useTimingMetrics } from '@/composables/useTimingMetrics'
 import { localDraftService, type LocalDraft, type QuillDelta } from '@/services/localDraft'
 import { decodeServerScript, resolveResume } from '@/services/resume'
+import { registerLineTime, attachLineTimeGuards } from '@/services/lineTime'
 import BeatPlayer from '@/components/BeatPlayer.vue'
 import SaveStatus from '@/components/SaveStatus.vue'
 
@@ -391,6 +392,9 @@ async function loadSession() {
 
     // Initialize Quill with proper config for mobile
     const isReadOnly = !authStore.isAuthenticated
+    // Line times (timed lyrics): this editor doesn't show them, but must keep
+    // them. Without the registration Quill drops them and autosave erases them.
+    registerLineTime()
     quill.value = new Quill(editorRef.value!, {
       theme: 'snow',
       readOnly: isReadOnly,
@@ -409,6 +413,7 @@ async function loadSession() {
     // stay on: spellcheck is left alone because spellcheck="false" can also
     // hide the iPhone's suggestion bar (BACKLOG Release 1.1: verify on device).
     quill.value.root.setAttribute('autocorrect', 'off')
+    attachLineTimeGuards(quill.value)
 
     // Set contents with selection disabled to prevent null offset crash
     // Quill 2.x fires selection-change during setContents which can crash on empty/complex deltas

@@ -18,6 +18,12 @@ export interface ServerScript {
   delta: QuillDelta
   /** Epoch ms of the save. 0 = unknown (legacy file or new session). */
   editTimestamp: number
+  /**
+   * Every other top-level field (for example `timing`, the timed-lyrics
+   * sections). Carried through saves untouched, so an editor that doesn't
+   * know a field never erases it. Present only when the file has any.
+   */
+  extras?: Record<string, unknown>
 }
 
 export interface ResumeChoice {
@@ -32,18 +38,26 @@ function isDelta(value: unknown): value is QuillDelta {
   return !!value && typeof value === 'object' && Array.isArray((value as QuillDelta).ops)
 }
 
-export function encodeServerScript(delta: QuillDelta, editTimestamp: number): ServerScript {
-  return { delta, editTimestamp }
+export function encodeServerScript(
+  delta: QuillDelta,
+  editTimestamp: number,
+  extras: Record<string, unknown> = {},
+): ServerScript & Record<string, unknown> {
+  // Known fields last, so a stale extra can never shadow them.
+  return { ...extras, delta, editTimestamp }
 }
 
 /**
- * Accepts the current `{ delta, editTimestamp }` format and legacy files that
- * are a bare delta (saved before 2026-11-16, no timestamp).
+ * Accepts the current `{ delta, editTimestamp, ...extras }` format and legacy
+ * files that are a bare delta (saved before 2026-11-16, no timestamp).
  */
 export function decodeServerScript(raw: unknown): ServerScript {
   if (raw && typeof raw === 'object' && isDelta((raw as ServerScript).delta)) {
-    const ts = Number((raw as ServerScript).editTimestamp)
-    return { delta: (raw as ServerScript).delta, editTimestamp: Number.isFinite(ts) ? ts : 0 }
+    const { delta, editTimestamp, ...rest } = raw as ServerScript & Record<string, unknown>
+    const ts = Number(editTimestamp)
+    const decoded: ServerScript = { delta, editTimestamp: Number.isFinite(ts) ? ts : 0 }
+    if (Object.keys(rest).length > 0) decoded.extras = rest
+    return decoded
   }
   if (isDelta(raw)) return { delta: raw, editTimestamp: 0 }
   return { delta: EMPTY_DELTA, editTimestamp: 0 }

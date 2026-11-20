@@ -5,7 +5,7 @@ import type {
   GetSessionResponseContent,
 } from '@/services/api'
 import { sessionsApi, storageApi } from '@/services/api'
-import { encodeServerScript } from '@/services/resume'
+import { decodeServerScript, encodeServerScript } from '@/services/resume'
 import { ScriptConflictError, isScriptConflict } from '@/services/scriptConflict'
 import { SessionDeletedError, httpStatusOf } from '@/services/sessionDeleted'
 import type { QuillDelta } from '@/services/localDraft'
@@ -20,6 +20,11 @@ export const useSessionStore = defineStore('sessionStore', {
     successMessage: null as string | null,
     /** Script version each open session's copy is based on (see loadScript). */
     scriptVersions: {} as Record<string, string | null>,
+    /**
+     * Script fields this copy doesn't edit (e.g. `timing`), as loaded with its
+     * version. Sent back unchanged on every save so nothing is erased.
+     */
+    scriptExtras: {} as Record<string, Record<string, unknown>>,
     /** Session whose saves are paused because another copy saved newer work. */
     conflictSessionId: null as string | null,
     /** Session whose saves are paused because it was deleted somewhere else. */
@@ -210,6 +215,12 @@ export const useSessionStore = defineStore('sessionStore', {
 
     /** Load the session's script, recording the version this copy is based on. */
     async loadScript(id: string, script: string | undefined): Promise<unknown> {
+      const content = await this.fetchScript(id, script)
+      this.scriptExtras[id] = decodeServerScript(content).extras ?? {}
+      return content
+    },
+
+    async fetchScript(id: string, script: string | undefined): Promise<unknown> {
       if (this.conflictSessionId === id) this.conflictSessionId = null
       if (this.deletedSessionId === id) this.deletedSessionId = null
       if (script?.startsWith('data:application/json;base64,')) {
@@ -243,7 +254,7 @@ export const useSessionStore = defineStore('sessionStore', {
         const expected = id in this.scriptVersions ? this.scriptVersions[id] : undefined
         const { url: scriptUrl, version } = await storageApi.uploadSessionScript(
           id,
-          encodeServerScript(delta as QuillDelta, Date.now()),
+          encodeServerScript(delta as QuillDelta, Date.now(), this.scriptExtras[id]),
           expected,
         )
         this.scriptVersions[id] = version
@@ -286,15 +297,21 @@ export const useSessionStore = defineStore('sessionStore', {
       }
     },
 
-    /** Create a new session holding these lyrics; returns its id. */
-    async createSessionWithLyrics(name: string, beatId: string | undefined, delta: QuillDelta): Promise<string> {
+    /** Create a new session holding these lyrics (and any extra script fields); returns its id. */
+    async createSessionWithLyrics(
+      name: string,
+      beatId: string | undefined,
+      delta: QuillDelta,
+      extras: Record<string, unknown> = {},
+    ): Promise<string> {
       // CreateSessionRequestContent lacks beatId (BACKLOG Batch D, one API contract)
       const created = await sessionsApi.createSession(
         { name, ...(beatId ? { beatId } : {}) } as CreateSessionRequestContent,
       )
       const newId = created.data.id
-      const { url, version } = await storageApi.uploadSessionScript(newId, encodeServerScript(delta, Date.now()), null)
+      const { url, version } = await storageApi.uploadSessionScript(newId, encodeServerScript(delta, Date.now(), extras), null)
       this.scriptVersions[newId] = version
+      this.scriptExtras[newId] = extras
       await sessionsApi.updateSession(newId, { name, artworkUrl: '', script: url })
       return newId
     },
@@ -307,7 +324,7 @@ export const useSessionStore = defineStore('sessionStore', {
       const original = this.activeSession?.id === id ? this.activeSession : null
       const name = `${original?.name || 'Untitled Session'} (restored)`
       const beatId = (original as { beatId?: string } | null)?.beatId
-      const newId = await this.createSessionWithLyrics(name, beatId, mine)
+      const newId = await this.createSessionWithLyrics(name, beatId, mine, this.scriptExtras[id])
 
       this.deletedSessionId = null
       delete this.scriptVersions[id]
@@ -319,7 +336,10 @@ export const useSessionStore = defineStore('sessionStore', {
       return { id: newId, name }
     },
 
-    /** Conflict: overwrite the newer version with this copy's lyrics. */
+    /**
+     * Conflict: overwrite the newer version with this copy. "This copy" means
+     * all of it: lyrics, line times and any extra fields it loaded.
+     */
     async resolveConflictKeepMine(id: string): Promise<void> {
       // Rebase onto the latest version so the next save is accepted. The
       // version being replaced stays recoverable in S3 version history.
@@ -337,10 +357,11 @@ export const useSessionStore = defineStore('sessionStore', {
       const original = this.activeSession?.id === id ? this.activeSession : null
       const copyName = `${original?.name || 'Untitled Session'} (my version)`
       const beatId = (original as { beatId?: string } | null)?.beatId
-      await this.createSessionWithLyrics(copyName, beatId, mine)
+      await this.createSessionWithLyrics(copyName, beatId, mine, this.scriptExtras[id])
 
       const latest = await storageApi.downloadSessionScript(id)
       this.scriptVersions[id] = latest.version
+      this.scriptExtras[id] = decodeServerScript(latest.content).extras ?? {}
       this.conflictSessionId = null
       return { latest: latest.content, copyName }
     },
