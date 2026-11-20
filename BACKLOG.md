@@ -41,6 +41,7 @@ Kiro keeps this file up to date as new issues come up in chat.
 ## Release 1.1 — Writing flow fixes from testing (small, ship before Release 2)
 
 - [x] **Turn autocorrect off in the lyrics editor, keep suggestions** (S) *(requested 2026-11-18)*: `autocorrect="off"` on Quill's editable element; spellcheck left on so the suggestion bar stays (`60eec91`). Checked on the real editor in a browser. Deployed 2026-11-18 (live bundle checked, beta test passed). iPhone test passed 2026-11-18 (autocorrect off, suggestion bar still there). Still open after the device test: Android (Gboard ignores `autocorrect`; turning it off there may need `spellcheck="false"`), the red underlines, and `autocapitalize`.
+- [ ] **Change a session's beat** (M) *(found 2026-11-20)*: there is no way to change the beat of a session once it's made. When added: if the session has pinned lines or sections, first tell the writer what happens (how many lines are pinned, that their times now point into a different beat, that sections reset to one), with Cancel. Rule 8 in `docs/research/timed-lyrics-data-model.md`. Lines keep their times; sections reset.
 
 ---
 

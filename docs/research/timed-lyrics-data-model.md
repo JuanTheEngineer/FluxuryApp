@@ -185,3 +185,18 @@ Built and tested locally, not deployed. Juan chose to deploy B and C together.
 Not included: dragging a block's edge to change how long a line lasts. A line still lasts until the next placed line, or 8 s at most.
 
 Tests: 333 unit and integration tests pass (6 new for the window and grid), and 5 timeline browser tests. The Step C test pins a line, drags it one bar, checks it moved exactly 2000 ms at 120 BPM, undoes it, and hides and shows the view across a reload.
+
+### After Juan tried Step C (2026-11-20)
+
+Decisions:
+- **Sections keep covering the whole song.** No gaps: every time needs a beat grid for snapping, the zoomed-in view, bar numbers and the training labels. Dragging the start of the first section later makes a grey **Intro** before it (`withIntro`); dragging the end of the last section earlier makes an **Outro** (`withOutro`). Same tempo as the section they came from, Undo in the message. Juan: keep section controls to a minimum after this.
+- **No instruction text** on the strip or the zoomed-in view (the cleaner of the two). The "drag the strip to scrub" hint and "ZOOMED IN · drag a line to move it" are gone; hiding the zoomed-in view is a small ▴ in its own column, so it never covers a line.
+- **"Back to classic" moved into the ⋯ menu** ("Switch to classic editor"). The "✨ Try new" pill stays in the classic view, where people find the new one.
+- **Tapping a block centres it:** the zoomed-in view now starts two bars before the playhead's bar, so a line on a bar start sits exactly in the middle, and tapping a block moves the beat to it.
+- **Changing a session's beat** doesn't exist in the app; added to `BACKLOG.md` (Release 1.1) with the warning from rule 8.
+
+Fixed:
+- The ⋯ menu opened behind the sticky timeline (both had z-index 30); the menu is above it now.
+- With a section selected, its grip at the song's very start covered the first 28 px of the strip and swallowed taps meant to jump near the start. Grips at the song's two ends are 16 px wide now.
+
+Tests: 337 unit and integration tests, 6 timeline browser tests (one new: the Intro drag with Undo, the menu above the timeline, and a tapped block landing within 45-55% of the zoomed-in view).
