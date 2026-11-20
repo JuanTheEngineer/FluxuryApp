@@ -134,3 +134,7 @@ Juan's answers on the data model and the interface:
 - Quill's Delta format with very long lyrics, and the rest of the real editor (toolbar, autosave).
 
 **Recommendation.** Keep Quill. Verify on a real iPhone before building the real screen.
+
+## iPhone check (2026-11-19)
+
+Juan opened the readable test page (`9000268`) in Safari on his iPhone. Marks and wrapped lines lined up, and he reported the Return-key check works. The Quill approach holds on a real iPhone. Not separately checked: Return in the middle and at the start of a line, rotation, and dictation.
