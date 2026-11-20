@@ -105,4 +105,22 @@ Built, not deployed:
 
 Known gap: a browser still running the old app until it refreshes can drop times. No session has times yet, so nothing can be lost before Step A.
 
+**Deployed and verified (2026-11-19):** pushed as `037a638`, deploy guard and all 11 deployment checks passed, the live bundle `index-C3Zjg7RC.js` contains the line-time code, the live sign-in page loads with no script errors, and the beta test (save, reopen in a fresh browser) passed against www.fluxury.app.
+
 Classic "keep mine" also overwrites the other copy's line times and sections, by the same rule as its lyrics. The overwritten version stays in S3 version history.
+
+## Step A status (2026-11-20)
+
+Built and tested locally, not deployed. Same editor and same document as classic; the timeline view only adds UI on top.
+- **"✨ Try new" / "Back to classic"** pill next to the session title. Remembered per device (`services/editorMode.ts`).
+- **Line times beside each placed line** (`components/LineTimeOverlay.vue`), drawn on top of Quill from each line's measured box, never inside Quill's DOM. Tapping a time jumps the beat there.
+- **Playing-line highlight:** the latest line that has started, until the next placed line (or 8 s).
+- **Pin** in the player row: places the outlined line at the playhead, moves it into time order among placed lines, and moves the outline to the next unplaced line below. A message names the lyric ("Pinned “Woke up with…” at 0:42") with Undo. One Undo reverts the pin and its move, never earlier typing. **Unpin** appears when the outlined line is pinned.
+- The Pin target follows the cursor: the line you tap or are typing.
+- No snapping yet: there are no sections until Step B.
+
+Tests: 301 unit and integration tests pass (15 new for Step A), and 2 new browser tests in `tests/e2e/timeline.spec.ts` (demo mode) cover Try new, Pin, Undo, switching back to classic, the remembered choice and a real Return key after a pinned line.
+
+Bug found by the browser test and fixed: tapping a line where the cursor already was fires no selection event, so Pin placed the wrong line.
+
+Open for Juan's review: the Pin message sits just above the player, over the bottom lines of lyrics, for 5 seconds. The old smoke test `Browse beats → start session` fails on its own; it looks for a "Write to this beat" button that moved into the player in `4d12835`.
