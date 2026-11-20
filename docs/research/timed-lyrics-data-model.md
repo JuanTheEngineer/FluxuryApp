@@ -202,3 +202,12 @@ Fixed:
 Tests: 337 unit and integration tests, 6 timeline browser tests (one new: the Intro drag with Undo, the menu above the timeline, and a tapped block landing within 45-55% of the zoomed-in view).
 
 - **No dragging lines in the zoomed-in view** (Juan, 2026-11-20): moving lines by hand mixes them up too easily. To change a line's time, pick it and Pin it again. Instead, **dragging the zoomed-in view slides it along the song** without moving the playhead. It follows the playhead again when the beat is moved (strip, a tap, a line's time), or 3 s after the last drag while the beat plays. Tap a block to pick its line; tap empty space to move the beat there. Reordering lines by dragging in the text editor is a backlog idea, not planned.
+
+### Zoom level, momentum, bar labels (2026-11-20)
+
+- **Zoom level:** + and − beside the zoomed-in view (in one column with ▴ hide), a two-finger pinch on a phone, and a trackpad pinch (ctrl + wheel). Levels 1, 2, 4, 8, 16 bars (`ZOOM_LEVELS`); without a tempo 2 s stand in for a bar. Remembered per device (`fluxury.zoomLevel`), 4 bars by default. "2 bars" shows for about a second after a change, as feedback, then goes. The playhead's bar stays in the middle at every level; at 1 bar the view steps by beats.
+- **Momentum:** a flick keeps the view gliding and slowing down (velocity from the last 100 ms of the drag, decay time constant 325 ms, like iPhone scrolling). Stops at the song's ends, on the next touch, when zooming, and when the beat is moved. Off under reduced motion.
+- **Bar labels without "bar"** in the zoomed-in view: plain numbers, with the section's name at its first bar, like a music app's bar ruler (Logic Pro's ruler is called the "Bar Ruler" and shows numbers only). Zoomed out, labels thin to every 2, 4, 8 bars and beat ticks go. "bar 6" stays beside lyric lines and in the position text, where no ruler explains the number.
+- The Sections button overlapped the top of the strip by a few pixels; its row has a fixed height and a gap now.
+
+Tests: 339 unit and integration tests; 6 timeline browser tests, now including zoom in/out, the remembered level, labels thinning at 16 bars, and a flick that keeps gliding after release.
