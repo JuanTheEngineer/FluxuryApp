@@ -67,9 +67,24 @@
           <span v-if="authStore.isAuthenticated" class="text-xs text-slate-500 ml-1">✏️</span>
         </h1>
 
+        <!-- Classic / timeline view. Same lyrics either way; remembered on this device. -->
+        <button
+          v-if="authStore.isAuthenticated"
+          type="button"
+          data-testid="editor-mode-toggle"
+          :aria-pressed="timelineOn"
+          class="ml-auto flex-shrink-0 px-3 h-8 rounded-full text-xs font-medium border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+          :class="timelineOn
+            ? 'border-slate-600 text-slate-300 hover:text-slate-100'
+            : 'border-violet-500/60 text-violet-200 bg-violet-500/10 hover:bg-violet-500/20'"
+          @click="toggleEditorMode"
+        >
+          {{ timelineOn ? 'Back to classic' : '✨ Try new' }}
+        </button>
+
         <!-- Session options (⋯). Delete lives here, one tap away from the
              writing area rather than a bare trash icon next to it. -->
-        <div v-if="authStore.isAuthenticated" ref="menuRoot" class="relative ml-auto flex-shrink-0">
+        <div v-if="authStore.isAuthenticated" ref="menuRoot" class="relative flex-shrink-0">
           <button
             type="button"
             data-testid="session-menu"
@@ -169,13 +184,33 @@
       </div>
       <p v-else-if="conflictNote" data-testid="conflict-note" class="mt-2 text-xs text-slate-400">{{ conflictNote }}</p>
 
-      <!-- Quill Editor — click anywhere to focus -->
+      <!-- Quill Editor — click anywhere to focus. In the timeline view the
+           overlay draws each line's time beside it, so the text shifts right. -->
       <div
         @click="focusEditor"
         data-testid="script-editor"
-        class="bg-surface-elevated border border-slate-700 rounded-lg mt-2 min-h-[50vh] overflow-hidden cursor-text"
+        class="relative bg-surface-elevated border border-slate-700 rounded-lg mt-2 min-h-[50vh] overflow-hidden cursor-text"
+        :class="{ 'timeline-editor': timelineOn }"
       >
         <div ref="editorRef" />
+        <LineTimeOverlay
+          v-if="timelineOn && quill"
+          :quill="quill"
+          :playing="playingIdx"
+          :target="targetLine"
+          @jump="jumpToLine"
+        />
+      </div>
+
+      <!-- Pin feedback with Undo (same pattern as session delete) -->
+      <div
+        v-if="pinToast"
+        role="status"
+        data-testid="pin-toast"
+        class="fixed left-4 right-4 bottom-44 z-50 mx-auto max-w-md flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 text-slate-100 px-3 py-2 text-sm shadow-xl"
+      >
+        <span class="flex-1">{{ pinToast.text }}</span>
+        <button type="button" data-testid="pin-undo" class="font-semibold text-violet-300 hover:text-violet-200 px-1" @click="undoPin">Undo</button>
       </div>
 
       <!-- Save Status -->
@@ -195,13 +230,38 @@
          No bar at all for a session without a beat (the banner above says so). -->
     <BeatPlayer
       v-if="beatStatus === 'ready'"
+      ref="playerRef"
       :beatUrl="sessionBeatUrl"
       :initialPosition="resumeState?.beatPlaybackPosition"
       :initialVolume="resumeState?.beatVolume"
       :initialLoop="resumeState?.beatLooping"
       @beat-audible="onBeatAudible"
       @update:playbackState="onPlaybackStateUpdate"
-    />
+      @time="onPlayerTime"
+    >
+      <template v-if="timelineOn" #actions>
+        <button
+          v-if="targetIsPinned"
+          type="button"
+          data-testid="unpin-line"
+          class="px-3 py-1.5 rounded-lg text-sm text-slate-300 border border-slate-600 hover:border-violet-400 hover:text-violet-200 transition-colors"
+          @click="unpinTarget"
+        >
+          Unpin
+        </button>
+        <button
+          type="button"
+          data-testid="pin-line"
+          :disabled="targetLine == null"
+          :title="targetLine == null ? 'Write a line first' : 'Pin the outlined line where the beat is now'"
+          class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-400 disabled:opacity-40 transition-colors"
+          @click="pinTarget"
+        >
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24"><path d="M5 3h14l-7 8z" fill="currentColor"/><path d="M12 11v10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          Pin
+        </button>
+      </template>
+    </BeatPlayer>
     <div
       v-else-if="beatStatus === 'unknown' && lifecycleState !== 'error' && route.params.id"
       data-testid="player-skeleton"
@@ -239,7 +299,9 @@ import { useConnectivity } from '@/composables/useConnectivity'
 import { useTimingMetrics } from '@/composables/useTimingMetrics'
 import { localDraftService, type LocalDraft, type QuillDelta } from '@/services/localDraft'
 import { decodeServerScript, resolveResume } from '@/services/resume'
-import { registerLineTime, attachLineTimeGuards } from '@/services/lineTime'
+import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, timeOrderTarget, moveLine, playingLine, nextUnplaced } from '@/services/lineTime'
+import { getEditorMode, setEditorMode, type EditorMode } from '@/services/editorMode'
+import LineTimeOverlay from '@/components/LineTimeOverlay.vue'
 import BeatPlayer from '@/components/BeatPlayer.vue'
 import SaveStatus from '@/components/SaveStatus.vue'
 
@@ -332,6 +394,112 @@ function onPlaybackStateUpdate(state: { position: number; volume: number; loopin
 
 function onBeatAudible() {
   recordBeatAudible()
+}
+
+// --- Timeline view ("Try new"): line times, Pin, playing-line highlight ---
+// Same Quill document as the classic view; only extra UI on top of it.
+
+const editorMode = ref<EditorMode>(getEditorMode())
+const timelineOn = computed(() => editorMode.value === 'timeline' && authStore.isAuthenticated)
+const playerRef = ref<{ getPosition: () => number; seekTo: (s: number) => void } | null>(null)
+const nowMs = ref(0)
+const lineTimes = shallowRef<{ text: string; timeMs: number | null }[]>([])
+/** The line Pin will place: the one last tapped, or the next unplaced line. */
+const targetLine = ref<number | null>(null)
+const pinToast = ref<{ text: string } | null>(null)
+let pinToastTimer: ReturnType<typeof setTimeout> | undefined
+
+const playingIdx = computed(() => playingLine(lineTimes.value, nowMs.value))
+const targetIsPinned = computed(() => targetLine.value != null && lineTimes.value[targetLine.value]?.timeMs != null)
+
+function toggleEditorMode() {
+  editorMode.value = timelineOn.value ? 'classic' : 'timeline'
+  setEditorMode(editorMode.value)
+  if (timelineOn.value) refreshLines(true)
+}
+
+function onPlayerTime(seconds: number) {
+  nowMs.value = Math.round(seconds * 1000)
+}
+
+/** Re-read line times; pick a target if none (or it no longer exists). */
+function refreshLines(pickTarget = false) {
+  if (!quill.value) return
+  lineTimes.value = readLineTimes(quill.value)
+  const t = targetLine.value
+  if (pickTarget || t == null || t >= lineTimes.value.length) {
+    targetLine.value = nextUnplaced(lineTimes.value, -1) ?? (t != null && t < lineTimes.value.length ? t : null)
+  }
+}
+
+function onSelectionChange(range: { index: number } | null) {
+  if (!range || !timelineOn.value) return
+  targetCursorLine(range.index)
+}
+
+/** Make the line holding the cursor the Pin target (a tap, or typing a line). */
+function targetCursorLine(index?: number) {
+  const q = quill.value
+  if (!q || !timelineOn.value) return
+  const at = index ?? q.getSelection()?.index
+  if (at == null) return
+  const [line] = q.getLine(at)
+  if (line) targetLine.value = q.getLines().indexOf(line)
+}
+
+const fmtMs = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms / 1000) % 60)).padStart(2, '0')}`
+
+/** A lyric's first words, for messages ("Pinned “Woke up with the…” at 0:42"). */
+const snippet = (text = '') => (text.trim().length > 24 ? text.trim().slice(0, 23) + '…' : text.trim())
+
+function showPinToast(text: string) {
+  pinToast.value = { text }
+  clearTimeout(pinToastTimer)
+  pinToastTimer = setTimeout(() => (pinToast.value = null), 5000)
+}
+
+/** Pin the target line at the playhead, keep placed lines in time order, move on. */
+function pinTarget() {
+  const q = quill.value
+  const from = targetLine.value
+  if (!q || from == null || !playerRef.value) return
+  const ms = Math.round(playerRef.value.getPosition() * 1000)
+  // One Undo reverts exactly this pin (and its move), never earlier typing.
+  q.history.cutoff()
+  setLineTime(q, from, ms)
+  const to = timeOrderTarget(readLineTimes(q), from)
+  moveLine(q, from, to)
+  q.history.cutoff()
+  refreshLines()
+  const at = to > from + 1 ? to - 1 : to === from + 1 ? from : to
+  // Move on down the song, so a verse can be pinned line after line.
+  targetLine.value = nextUnplaced(lineTimes.value, at) ?? at
+  showPinToast(`Pinned “${snippet(lineTimes.value[at]?.text)}” at ${fmtMs(ms)}.`)
+}
+
+function unpinTarget() {
+  const q = quill.value
+  const i = targetLine.value
+  if (!q || i == null) return
+  q.history.cutoff()
+  setLineTime(q, i, null)
+  q.history.cutoff()
+  refreshLines()
+  showPinToast(`Unpinned “${snippet(lineTimes.value[i]?.text)}”.`)
+}
+
+function undoPin() {
+  quill.value?.history.undo()
+  pinToast.value = null
+  refreshLines()
+}
+
+/** Tap a line's time: hear it from there, and make it the Pin target. */
+function jumpToLine(i: number) {
+  const ms = lineTimes.value[i]?.timeMs
+  if (ms == null) return
+  playerRef.value?.seekTo(ms / 1000)
+  targetLine.value = i
 }
 
 // --- Title editing ---
@@ -448,9 +616,15 @@ async function loadSession() {
     }, 100)
 
     // Wire Quill text-change to update currentDelta ref
-    quill.value.on('text-change', () => {
+    quill.value.on('text-change', (_d: unknown, _o: unknown, source: string) => {
       currentDelta.value = quill.value!.getContents()
+      refreshLines()
+      if (source === 'user') targetCursorLine() // the line being written is the one to pin
     })
+    quill.value.on('selection-change', onSelectionChange)
+    // A tap where the cursor already is fires no selection-change.
+    quill.value.root.addEventListener('click', () => targetCursorLine())
+    refreshLines(true)
 
     // Expose test helper for E2E testing
     if (import.meta.env.VITE_DEMO_MODE === 'true') {
@@ -585,6 +759,7 @@ onMounted(async () => {
 onUnmounted(() => {
   destroyAutosave()
   document.removeEventListener('pointerdown', onPointerDownOutside)
+  clearTimeout(pinToastTimer)
 })
 </script>
 
@@ -600,6 +775,13 @@ onUnmounted(() => {
 .ql-snow .ql-editor.ql-blank::before {
   color: #64748b;
   font-style: normal;
+}
+/* Timeline view: room on the left for each line's time (LineTimeOverlay) */
+.timeline-editor .ql-snow .ql-editor {
+  padding-left: 3.5rem;
+}
+.timeline-editor .ql-snow .ql-editor.ql-blank::before {
+  left: 3.5rem;
 }
 .ql-snow .ql-toolbar {
   border: none !important;

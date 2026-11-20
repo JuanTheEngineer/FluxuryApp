@@ -115,7 +115,10 @@ vi.mock('quill', () => ({
   }),
 }))
 // Quill is stubbed here, so the line-time setup has nothing to attach to (covered in lineTime.test.ts).
-vi.mock('@/services/lineTime', () => ({ registerLineTime: () => {}, attachLineTimeGuards: () => {} }))
+vi.mock('@/services/lineTime', async (orig) => ({
+  ...(await orig<typeof import('@/services/lineTime')>()),
+  registerLineTime: () => {}, attachLineTimeGuards: () => {}, readLineTimes: () => [],
+}))
 vi.mock('quill/dist/quill.snow.css', () => ({}))
 vi.mock('howler', () => ({
   Howl: vi.fn().mockImplementation(() => ({ play: vi.fn(), pause: vi.fn(), stop: vi.fn(), seek: vi.fn(() => 0),

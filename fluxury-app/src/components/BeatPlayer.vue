@@ -48,6 +48,11 @@
         >
           ✍️ Write
         </button>
+
+        <!-- Extra controls from the page (the timeline editor's Pin), right side, near the thumb -->
+        <div v-if="$slots.actions" class="ml-auto flex items-center gap-2">
+          <slot name="actions" />
+        </div>
       </div>
 
       <!-- Volume -->
@@ -90,6 +95,8 @@ const emit = defineEmits<{
   'beat-audible': []
   'update:playbackState': [state: { position: number; volume: number; looping: boolean }]
   'start-session': []
+  /** Playhead in seconds, about 10 times a second while playing and on every seek. */
+  'time': [seconds: number]
 }>()
 
 const sound = ref<Howl | null>(null)
@@ -315,4 +322,20 @@ onBeforeUnmount(() => {
   if (sound.value) sound.value.unload()
   clearIntervalIfNeeded()
 })
+
+watch(currentTime, (t) => emit('time', t))
+
+/** The exact playhead right now (more precise than the last 'time' event). */
+function getPosition(): number {
+  const s = sound.value?.seek()
+  return typeof s === 'number' ? s : currentTime.value
+}
+
+/** Move the playhead to `seconds` (clamped to the track), playing or not. */
+function seekTo(seconds: number) {
+  if (!sound.value || duration.value === 0) return
+  currentTime.value = Math.max(0, Math.min(seconds, duration.value - 0.1))
+  seekAudio()
+}
+defineExpose({ getPosition, seekTo })
 </script>

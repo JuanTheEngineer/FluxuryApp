@@ -81,3 +81,83 @@ export function readLineTimes(quill: Quill): { text: string; timeMs: number | nu
     return { text: line.domNode.textContent ?? '', timeMs: t == null ? null : Number(t) }
   })
 }
+
+/** Set (or with null, clear) the time of line `lineIdx`, as an undoable user edit. */
+export function setLineTime(quill: Quill, lineIdx: number, ms: number | null): void {
+  const line = quill.getLines()[lineIdx]
+  if (!line) return
+  const value = ms == null ? false : String(Math.round(ms))
+  quill.formatLine(quill.getIndex(line), 1, LINE_TIME, value, 'user')
+}
+
+/**
+ * Where a just-placed line belongs so placed lines stay in time order: the
+ * index to insert it before. Unplaced lines are left where they were typed, so
+ * only placed lines are compared.
+ */
+export function timeOrderTarget(lines: { timeMs: number | null }[], from: number): number {
+  const t = lines[from].timeMs
+  if (t == null) return from
+  const placed = lines.map((l, i) => ({ i, t: l.timeMs })).filter((p) => p.i !== from && p.t != null) as {
+    i: number
+    t: number
+  }[]
+  const prev = [...placed].reverse().find((p) => p.i < from)
+  const next = placed.find((p) => p.i > from)
+  // Already in order among the placed lines: don't move it.
+  if ((!prev || prev.t <= t) && (!next || t <= next.t)) return from
+  const firstLater = placed.find((p) => p.t > t)
+  return firstLater ? firstLater.i : placed[placed.length - 1].i + 1
+}
+
+/**
+ * Move line `from` so it sits before the line currently at `to` (`to` may be
+ * the line count, meaning the end). Text, formatting and time travel together.
+ * Source 'api': a moved timed newline must not be mistaken for an Enter copy.
+ * Not 'silent', so Quill's history records it and Undo reverses it.
+ */
+export function moveLine(quill: Quill, from: number, to: number): void {
+  const lines = quill.getLines()
+  if (to === from || to === from + 1 || !lines[from]) return
+  const Delta = Quill.import('delta') as unknown as new (ops?: unknown[]) => {
+    retain(n: number): any
+  }
+  const a = quill.getIndex(lines[from])
+  const len = lines[from].length()
+  const b = to >= lines.length ? quill.getLength() : quill.getIndex(lines[to])
+  const seg = new Delta(quill.getContents(a, len).ops)
+  const change =
+    b < a
+      ? new Delta().retain(b).concat(seg).retain(a - b).delete(len)
+      : new Delta().retain(a).delete(len).retain(b - a - len).concat(seg)
+  quill.updateContents(change, 'api')
+}
+
+/** How long a line stays highlighted at most when no later line is placed. */
+export const MAX_LINE_MS = 8000
+
+/**
+ * The line being played at `nowMs`: the latest placed line that has started,
+ * until the next placed line starts (or MAX_LINE_MS passes). Null if none.
+ */
+export function playingLine(lines: { timeMs: number | null }[], nowMs: number): number | null {
+  let best: number | null = null
+  let bestT = -Infinity
+  let nextT = Infinity
+  lines.forEach((l, i) => {
+    if (l.timeMs == null) return
+    if (l.timeMs <= nowMs && l.timeMs >= bestT) {
+      best = i
+      bestT = l.timeMs
+    }
+  })
+  if (best == null) return null
+  for (const l of lines) if (l.timeMs != null && l.timeMs > bestT && l.timeMs < nextT) nextT = l.timeMs
+  return nowMs < Math.min(nextT, bestT + MAX_LINE_MS) ? best : null
+}
+
+/** The first unplaced, non-empty line after `from`, or null. */
+export function nextUnplaced(lines: { text: string; timeMs: number | null }[], from: number): number | null {
+  for (let i = from + 1; i < lines.length; i++) if (lines[i].timeMs == null && lines[i].text.trim()) return i
+  return null
+}
