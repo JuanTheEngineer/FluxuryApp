@@ -200,3 +200,5 @@ Fixed:
 - With a section selected, its grip at the song's very start covered the first 28 px of the strip and swallowed taps meant to jump near the start. Grips at the song's two ends are 16 px wide now.
 
 Tests: 337 unit and integration tests, 6 timeline browser tests (one new: the Intro drag with Undo, the menu above the timeline, and a tapped block landing within 45-55% of the zoomed-in view).
+
+- **No dragging lines in the zoomed-in view** (Juan, 2026-11-20): moving lines by hand mixes them up too easily. To change a line's time, pick it and Pin it again. Instead, **dragging the zoomed-in view slides it along the song** without moving the playhead. It follows the playhead again when the beat is moved (strip, a tap, a line's time), or 3 s after the last drag while the beat plays. Tap a block to pick its line; tap empty space to move the beat there. Reordering lines by dragging in the text editor is a backlog idea, not planned.
