@@ -220,6 +220,19 @@ export const useSessionStore = defineStore('sessionStore', {
       return content
     },
 
+    /**
+     * Change one script field the lyrics editor doesn't own (e.g. `timing`).
+     * Saved with the next autosave, under the same conflict detection as the
+     * lyrics. `undefined` removes the field.
+     */
+    setScriptExtra(id: string, key: string, value: unknown): void {
+      if (key === 'delta' || key === 'editTimestamp') return
+      const next = { ...(this.scriptExtras[id] ?? {}) }
+      if (value === undefined) delete next[key]
+      else next[key] = value
+      this.scriptExtras[id] = next
+    },
+
     async fetchScript(id: string, script: string | undefined): Promise<unknown> {
       if (this.conflictSessionId === id) this.conflictSessionId = null
       if (this.deletedSessionId === id) this.deletedSessionId = null

@@ -97,6 +97,8 @@ const emit = defineEmits<{
   'start-session': []
   /** Playhead in seconds, about 10 times a second while playing and on every seek. */
   'time': [seconds: number]
+  /** Length of the loaded beat in seconds. */
+  'duration': [seconds: number]
 }>()
 
 const sound = ref<Howl | null>(null)
@@ -324,6 +326,9 @@ onBeforeUnmount(() => {
 })
 
 watch(currentTime, (t) => emit('time', t))
+watch(duration, (d) => {
+  if (d > 0) emit('duration', d)
+})
 
 /** The exact playhead right now (more precise than the last 'time' event). */
 function getPosition(): number {

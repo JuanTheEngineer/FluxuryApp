@@ -60,6 +60,18 @@ describe('script fields the editor does not edit', () => {
     expect(body.editTimestamp).toBeGreaterThan(1000)
   })
 
+  it('a changed extra (timing edited in the timeline view) is what the next save sends', async () => {
+    const store = await freshStore()
+    await store.loadScript('s1', 's3://b/sessions/s1/script.json')
+    const edited = { ...timing, sections: [] }
+    store.setScriptExtra('s1', 'timing', edited)
+    store.setScriptExtra('s1', 'delta', 'ignored') // the lyrics can't be replaced this way
+    await store.saveScript('s1', timedDelta)
+    expect(uploadedBody().timing).toEqual(edited)
+    expect(uploadedBody().delta).toEqual(timedDelta)
+    expect(uploadedBody().someFutureField).toEqual([1, 2])
+  })
+
   it('a file without extras still saves as { delta, editTimestamp } only', async () => {
     api.downloadSessionScript.mockResolvedValue({ content: { delta: timedDelta, editTimestamp: 5 }, version: '"e1"' })
     const store = await freshStore()

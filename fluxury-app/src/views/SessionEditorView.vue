@@ -184,6 +184,52 @@
       </div>
       <p v-else-if="conflictNote" data-testid="conflict-note" class="mt-2 text-xs text-slate-400">{{ conflictNote }}</p>
 
+      <!-- Timeline view: the whole beat at a glance, stays in view while writing -->
+      <div
+        v-if="timelineOn && durationMs > 0"
+        data-testid="timeline-header"
+        class="sticky top-[53px] z-30 -mx-4 px-4 pt-2 pb-2 bg-surface border-b border-slate-800"
+      >
+        <SongStrip
+          :duration-ms="durationMs"
+          :now-ms="nowMs"
+          :sections="timing.sections"
+          :blocks="stripBlocks"
+          @seek="seekMs"
+        >
+          <template #right>
+            <div class="flex items-center gap-2 text-[11px]">
+              <span data-testid="beat-position" class="text-slate-300 tabular-nums">
+                <template v-if="nowPos">
+                  <b :style="{ color: nowPos.section.color }">{{ nowPos.section.name }}</b>
+                  <template v-if="nowPos.bar != null"> · bar {{ nowPos.bar }} · beat {{ nowPos.beat }}</template>
+                </template>
+                <template v-else>{{ fmtMs(nowMs) }}</template>
+              </span>
+              <button
+                type="button"
+                data-testid="sections-toggle"
+                :aria-expanded="sectionsOpen"
+                class="px-2.5 py-1 rounded-full border border-slate-600 bg-slate-800 text-slate-200 hover:border-violet-400"
+                @click="sectionsOpen = !sectionsOpen"
+              >
+                Sections {{ sectionsOpen ? '▴' : '▾' }}
+              </button>
+            </div>
+          </template>
+        </SongStrip>
+        <SectionPanel
+          :open="sectionsOpen"
+          :timing="timing"
+          :selected-id="selectedSectionId"
+          @select="selectSection"
+          @split="splitHere"
+          @edit="editSection"
+          @tempo-to-all="tempoToAll"
+          @remove="removeSectionWithUndo"
+        />
+      </div>
+
       <!-- Quill Editor — click anywhere to focus. In the timeline view the
            overlay draws each line's time beside it, so the text shifts right. -->
       <div
@@ -198,6 +244,7 @@
           :quill="quill"
           :playing="playingIdx"
           :target="targetLine"
+          :describe="timeDescriber"
           @jump="jumpToLine"
         />
       </div>
@@ -210,7 +257,7 @@
         class="fixed left-4 right-4 bottom-44 z-50 mx-auto max-w-md flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 text-slate-100 px-3 py-2 text-sm shadow-xl"
       >
         <span class="flex-1">{{ pinToast.text }}</span>
-        <button type="button" data-testid="pin-undo" class="font-semibold text-violet-300 hover:text-violet-200 px-1" @click="undoPin">Undo</button>
+        <button v-if="pinToast.undo" type="button" data-testid="pin-undo" class="font-semibold text-violet-300 hover:text-violet-200 px-1" @click="undoToast">Undo</button>
       </div>
 
       <!-- Save Status -->
@@ -238,6 +285,7 @@
       @beat-audible="onBeatAudible"
       @update:playbackState="onPlaybackStateUpdate"
       @time="onPlayerTime"
+      @duration="onPlayerDuration"
     >
       <template v-if="timelineOn" #actions>
         <button
@@ -299,8 +347,14 @@ import { useConnectivity } from '@/composables/useConnectivity'
 import { useTimingMetrics } from '@/composables/useTimingMetrics'
 import { localDraftService, type LocalDraft, type QuillDelta } from '@/services/localDraft'
 import { decodeServerScript, resolveResume } from '@/services/resume'
-import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, timeOrderTarget, moveLine, playingLine, nextUnplaced } from '@/services/lineTime'
+import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, timeOrderTarget, moveLine, playingLine, nextUnplaced, MAX_LINE_MS } from '@/services/lineTime'
 import { getEditorMode, setEditorMode, type EditorMode } from '@/services/editorMode'
+import {
+  emptyTiming, decodeTiming, splitAt, removeSection, updateSection, applyTempoToAll,
+  snap, positionOf, sectionAt, type Timing, type Section, type SectionEdit,
+} from '@/services/timing'
+import SongStrip from '@/components/SongStrip.vue'
+import SectionPanel from '@/components/SectionPanel.vue'
 import LineTimeOverlay from '@/components/LineTimeOverlay.vue'
 import BeatPlayer from '@/components/BeatPlayer.vue'
 import SaveStatus from '@/components/SaveStatus.vue'
@@ -406,7 +460,8 @@ const nowMs = ref(0)
 const lineTimes = shallowRef<{ text: string; timeMs: number | null }[]>([])
 /** The line Pin will place: the one last tapped, or the next unplaced line. */
 const targetLine = ref<number | null>(null)
-const pinToast = ref<{ text: string } | null>(null)
+/** A short message after Pin and section changes; `undo` reverts that one change. */
+const pinToast = ref<{ text: string; undo?: () => void } | null>(null)
 let pinToastTimer: ReturnType<typeof setTimeout> | undefined
 
 const playingIdx = computed(() => playingLine(lineTimes.value, nowMs.value))
@@ -452,8 +507,8 @@ const fmtMs = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms
 /** A lyric's first words, for messages ("Pinned “Woke up with the…” at 0:42"). */
 const snippet = (text = '') => (text.trim().length > 24 ? text.trim().slice(0, 23) + '…' : text.trim())
 
-function showPinToast(text: string) {
-  pinToast.value = { text }
+function showPinToast(text: string, undo?: () => void) {
+  pinToast.value = { text, undo }
   clearTimeout(pinToastTimer)
   pinToastTimer = setTimeout(() => (pinToast.value = null), 5000)
 }
@@ -463,7 +518,8 @@ function pinTarget() {
   const q = quill.value
   const from = targetLine.value
   if (!q || from == null || !playerRef.value) return
-  const ms = Math.round(playerRef.value.getPosition() * 1000)
+  // Snaps to the bar or beat when the section has a tempo (people tap late and unevenly).
+  const ms = snapMs(Math.round(playerRef.value.getPosition() * 1000))
   // One Undo reverts exactly this pin (and its move), never earlier typing.
   q.history.cutoff()
   setLineTime(q, from, ms)
@@ -474,7 +530,7 @@ function pinTarget() {
   const at = to > from + 1 ? to - 1 : to === from + 1 ? from : to
   // Move on down the song, so a verse can be pinned line after line.
   targetLine.value = nextUnplaced(lineTimes.value, at) ?? at
-  showPinToast(`Pinned “${snippet(lineTimes.value[at]?.text)}” at ${fmtMs(ms)}.`)
+  showPinToast(`Pinned “${snippet(lineTimes.value[at]?.text)}” at ${describeTime(ms).long}.`, undoLyricsEdit)
 }
 
 function unpinTarget() {
@@ -485,13 +541,115 @@ function unpinTarget() {
   setLineTime(q, i, null)
   q.history.cutoff()
   refreshLines()
-  showPinToast(`Unpinned “${snippet(lineTimes.value[i]?.text)}”.`)
+  showPinToast(`Unpinned “${snippet(lineTimes.value[i]?.text)}”.`, undoLyricsEdit)
 }
 
-function undoPin() {
+function undoLyricsEdit() {
   quill.value?.history.undo()
-  pinToast.value = null
   refreshLines()
+}
+
+function undoToast() {
+  pinToast.value?.undo?.()
+  pinToast.value = null
+}
+
+// --- Sections and the song strip (timed lyrics, Step B) ---
+// Stored as `timing` in script.json, beside the lyrics, saved by autosave.
+
+const durationMs = ref(0)
+const timing = shallowRef<Timing>(emptyTiming(0))
+const sectionsOpen = ref(false)
+const selectedSectionId = ref<string | null>(null)
+
+/** Read the stored timing once both it and the beat's length are known. */
+function loadTiming() {
+  const id = session.value?.id
+  if (!id || durationMs.value <= 0) return
+  const raw = sessionStore.scriptExtras[id]?.timing
+  timing.value = decodeTiming(raw, durationMs.value) ?? emptyTiming(durationMs.value)
+}
+
+function onPlayerDuration(seconds: number) {
+  durationMs.value = Math.round(seconds * 1000)
+  loadTiming()
+}
+
+/** Store a timing change and let autosave send it with the lyrics. */
+function commitTiming(next: Timing) {
+  const id = session.value?.id
+  if (!id || !quill.value) return
+  timing.value = next
+  sessionStore.setScriptExtra(id, 'timing', next)
+  // Autosave watches the lyrics; a fresh copy makes it save the new timing too.
+  currentDelta.value = quill.value.getContents()
+}
+
+const snapMs = (ms: number) => (timing.value.sections.length ? snap(timing.value, ms) : ms)
+
+/** How a time is shown beside a line and in messages. */
+function describeTime(ms: number): { label: string; sub: string | null; color: string | null; long: string } {
+  const p = positionOf(timing.value, ms)
+  const label = fmtMs(ms)
+  if (!p) return { label, sub: null, color: null, long: label }
+  const sub = p.bar != null ? `bar ${p.bar}` : null
+  return { label, sub, color: p.section.color, long: `${p.section.name}${sub ? `, ${sub}` : ''} (${label})` }
+}
+
+const nowPos = computed(() => positionOf(timing.value, nowMs.value))
+/** A new function whenever the sections change, so the line labels redraw. */
+const timeDescriber = computed(() => {
+  void timing.value // dependency: recompute when the sections change
+  return (ms: number) => describeTime(ms)
+})
+
+const stripBlocks = computed(() => {
+  const placed = lineTimes.value.filter((l) => l.timeMs != null).map((l) => l.timeMs!).sort((a, b) => a - b)
+  return placed.map((start, i) => ({
+    start,
+    end: Math.min(placed[i + 1] ?? Infinity, start + MAX_LINE_MS, durationMs.value),
+    color: sectionAt(timing.value, start)?.color ?? '#8b5cf6',
+  }))
+})
+
+function seekMs(ms: number) {
+  playerRef.value?.seekTo(ms / 1000)
+  nowMs.value = ms
+}
+
+function selectSection(s: Section) {
+  selectedSectionId.value = selectedSectionId.value === s.id ? null : s.id
+  if (selectedSectionId.value) seekMs(s.startMs)
+}
+
+function splitHere() {
+  const before = timing.value
+  const r = splitAt(before, snapMs(nowMs.value))
+  if ('error' in r) return showPinToast(r.error)
+  commitTiming(r.timing)
+  selectedSectionId.value = r.section.id
+  showPinToast(`New section “${r.section.name}” from ${fmtMs(r.section.startMs)}.`, () => commitTiming(before))
+}
+
+function editSection(id: string, e: SectionEdit) {
+  commitTiming(updateSection(timing.value, id, e))
+}
+
+function tempoToAll(id: string) {
+  const before = timing.value
+  commitTiming(applyTempoToAll(before, id))
+  showPinToast('Tempo applied to all sections.', () => commitTiming(before))
+}
+
+function removeSectionWithUndo(id: string) {
+  const before = timing.value
+  const gone = before.sections.find((s) => s.id === id)
+  commitTiming(removeSection(before, id))
+  selectedSectionId.value = null
+  showPinToast(`Removed “${gone?.name ?? 'section'}”.`, () => {
+    commitTiming(before)
+    selectedSectionId.value = id
+  })
 }
 
 /** Tap a line's time: hear it from there, and make it the Pin target. */
@@ -625,6 +783,7 @@ async function loadSession() {
     // A tap where the cursor already is fires no selection-change.
     quill.value.root.addEventListener('click', () => targetCursorLine())
     refreshLines(true)
+    loadTiming() // the beat may have loaded before the lyrics did
 
     // Expose test helper for E2E testing
     if (import.meta.env.VITE_DEMO_MODE === 'true') {
@@ -703,6 +862,7 @@ function useLatestVersion() {
     // Load the latest into the editor. The resulting text-change autosaves it
     // once more against the new version, which also marks the draft synced.
     quill.value!.setContents(decodeServerScript(latest).delta as unknown as Parameters<Quill['setContents']>[0])
+    loadTiming() // the latest version's sections, too
     conflictNote.value = `Your version was saved as "${copyName}".`
   })
 }

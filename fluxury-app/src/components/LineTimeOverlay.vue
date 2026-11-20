@@ -23,11 +23,17 @@
       class="pointer-events-auto absolute left-1 flex items-center gap-1 h-6 px-1 rounded text-[11px] tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
       :class="m.line === playing ? 'text-amber-300 font-semibold' : 'text-violet-300 hover:text-violet-200'"
       :style="{ top: m.top + 'px' }"
-      :aria-label="`Line ${m.line + 1} pinned at ${m.label}. Jump there`"
+      :aria-label="`Line ${m.line + 1} pinned at ${m.long}. Jump there`"
       @click="emit('jump', m.line)"
     >
-      <span class="w-2 h-2 rounded-full" :class="m.line === playing ? 'bg-amber-400' : 'bg-violet-500'" />
-      {{ m.label }}
+      <span
+        class="w-2 h-2 rounded-full flex-none"
+        :style="{ background: m.line === playing ? '#fbbf24' : m.color ?? '#8b5cf6' }"
+      />
+      <span class="flex flex-col items-start leading-[1.1]">
+        <span>{{ m.label }}</span>
+        <span v-if="m.sub" class="text-[9px] font-normal" :style="{ color: m.color ?? undefined }">{{ m.sub }}</span>
+      </span>
     </button>
   </div>
 </template>
@@ -38,11 +44,17 @@ import type Quill from 'quill'
 import { readLineTimes } from '@/services/lineTime'
 
 /** playing: line under the playhead. target: line that Pin will place. */
-const props = defineProps<{ quill: Quill; playing: number | null; target: number | null }>()
+const props = defineProps<{
+  quill: Quill
+  playing: number | null
+  target: number | null
+  /** How to show a time: "0:42" plus, with sections, "bar 3" in the section's colour. */
+  describe?: (ms: number) => { label: string; sub: string | null; color: string | null; long: string }
+}>()
 const emit = defineEmits<{ jump: [line: number] }>()
 
 const root = ref<HTMLElement>()
-const marks = ref<{ line: number; top: number; label: string }[]>([])
+const marks = ref<{ line: number; top: number; label: string; sub: string | null; color: string | null; long: string }[]>([])
 const band = ref<{ top: number; height: number } | null>(null)
 const targetBox = ref<{ top: number; height: number } | null>(null)
 
@@ -56,7 +68,8 @@ function measure() {
   marks.value = times.flatMap((t, i) => {
     if (t.timeMs == null) return []
     const r = lines[i].domNode.getBoundingClientRect()
-    return [{ line: i, top: r.top - base, label: fmt(t.timeMs) }]
+    const d = props.describe?.(t.timeMs) ?? { label: fmt(t.timeMs), sub: null, color: null, long: fmt(t.timeMs) }
+    return [{ line: i, top: r.top - base, ...d }]
   })
   const box = (i: number | null) => {
     const line = i == null ? null : lines[i]
@@ -93,6 +106,6 @@ onBeforeUnmount(() => {
   observer?.disconnect()
   cancelAnimationFrame(frame)
 })
-watch(() => [props.playing, props.target], measure)
+watch(() => [props.playing, props.target, props.describe], measure)
 defineExpose({ measure: schedule })
 </script>
