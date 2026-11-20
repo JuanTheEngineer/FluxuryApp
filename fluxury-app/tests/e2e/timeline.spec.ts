@@ -151,8 +151,79 @@ test('Step B: song strip scrubs, sections split the beat, Pin snaps to the secti
   // Removing the section offers Undo, which brings it back.
   await page.getByTestId('section-chip').nth(1).click()
   await page.getByTestId('section-chip').nth(1).click()
+  await page.getByTestId('section-more').click() // Remove sits behind More now
   await page.getByTestId('remove-section').click()
   await expect(page.getByTestId('section-chip')).toHaveCount(1)
   await page.getByTestId('pin-undo').click()
   await expect(page.getByTestId('section-chip')).toHaveCount(2)
+})
+
+/** Visible to the writer: inside the window and not hidden under the sticky strip or the player. */
+async function expectReadable(page: Page, locator: ReturnType<Page['locator']>) {
+  await expect
+    .poll(async () => {
+      const r = await locator.boundingBox()
+      const h = await page.getByTestId('timeline-header').boundingBox()
+      const p = await page.getByTestId('beat-player').boundingBox()
+      if (!r || !h || !p) return 'missing'
+      return r.y >= h.y + h.height - 1 && r.y + r.height <= p.y + 1 ? 'readable' : `line ${Math.round(r.y)}-${Math.round(r.y + r.height)}, strip ends ${Math.round(h.y + h.height)}, player starts ${Math.round(p.y)}`
+    }, { timeout: 4000 })
+    .toBe('readable')
+}
+
+test('Step B review: tap a pinned line on the strip, move a section, one tempo for the song, lyrics follow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await openFirstSession(page)
+  if (!(await page.getByTestId('editor-mode-toggle').textContent())?.includes('Back')) {
+    await page.getByTestId('editor-mode-toggle').click()
+  }
+  const strip = page.getByTestId('song-strip')
+  await expect(strip).toBeVisible({ timeout: 10_000 })
+  const at = async (f: number) => {
+    const b = (await strip.boundingBox())!
+    await page.mouse.click(b.x + b.width * f, b.y + b.height / 2)
+  }
+  const ql = page.locator('[data-testid="script-editor"] .ql-editor')
+
+  // Two sections, then one tempo: the other section takes it too.
+  await at(0.4)
+  await page.getByTestId('sections-toggle').click()
+  await page.getByTestId('add-section').click()
+  await page.getByTestId('section-bpm').fill('100')
+  await page.getByTestId('section-bpm').press('Enter')
+  await expect(page.getByTestId('pin-toast')).toContainText('also used for 1 other section')
+  await page.getByTestId('section-chip').first().click()
+  await expect(page.getByTestId('section-bpm')).toHaveValue('100')
+
+  // Pin the first lyric line near the start, so the strip has a block there.
+  await at(0.02)
+  await ql.locator('> *').first().click()
+  await page.getByTestId('pin-line').click()
+
+  // Move the section boundary from 40% to about 50% by dragging it.
+  const handle = page.getByTestId('section-boundary').first()
+  const hb = (await handle.boundingBox())!
+  const sb = (await strip.boundingBox())!
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(sb.x + sb.width * 0.5, hb.y + hb.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(page.getByTestId('pin-toast')).toContainText(/now starts at 1:(3|4)\d/) // 50% of 3:20 is 1:40
+  await page.getByTestId('pin-undo').click()
+  await expect(handle).toHaveAttribute('aria-label', /now 1:2\d/) // back at 40% (1:20)
+
+  // Scroll away, then tap the pinned line's block: that line is picked and scrolled into view.
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  const firstLine = ql.locator('> *').first()
+  await at(0.025)
+  await expect(page.getByTestId('pin-target')).toBeVisible()
+  await expectReadable(page, firstLine)
+
+  // Moving the beat makes the lyrics follow: scroll away, scrub back to the pinned line.
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await page.waitForTimeout(3200) // past the pause that follows our own scroll
+  await at(0.9)
+  await at(0.03)
+  await expectReadable(page, firstLine)
+  await page.screenshot({ path: test.info().outputPath('step-b-review.png') })
 })

@@ -1,6 +1,7 @@
 <template>
   <div
       v-if="beatUrl"
+      data-testid="beat-player"
       class="fixed bottom-0 left-0 right-0 bg-surface-elevated border-t border-slate-700 p-4 shadow-2xl flex flex-col gap-2 transition-all z-40"
   >
     <!-- Error State -->

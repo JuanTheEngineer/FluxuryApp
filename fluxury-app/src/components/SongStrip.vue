@@ -1,6 +1,7 @@
 <template>
-  <!-- The whole beat at a glance: section colours, where lines are placed,
-       and the playhead. Drag or tap anywhere to move the beat there. -->
+  <!-- The whole beat at a glance: sections (named), the bar grid where a tempo
+       is set, where lines are placed, and the playhead. Drag or tap to move the
+       beat; drag the line between two sections to move where one starts. -->
   <div class="select-none">
     <div class="flex items-center justify-between min-h-[26px]">
       <span
@@ -12,90 +13,140 @@
       </span>
       <slot name="right" />
     </div>
-    <svg
-      ref="svg"
-      data-testid="song-strip"
-      role="slider"
-      tabindex="0"
-      aria-label="Position in the beat"
-      :aria-valuemin="0"
-      :aria-valuemax="Math.round(durationMs / 1000)"
-      :aria-valuenow="Math.round(nowMs / 1000)"
-      :aria-valuetext="fmt(nowMs)"
-      :viewBox="`0 0 1000 ${H}`"
-      preserveAspectRatio="none"
-      class="block w-full h-11 cursor-pointer rounded touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
-      @pointerdown="down"
-      @pointermove="move"
-      @pointerup="up"
-      @pointercancel="up"
-      @keydown.left.prevent="emit('seek', Math.max(0, nowMs - 5000))"
-      @keydown.right.prevent="emit('seek', Math.min(durationMs, nowMs + 5000))"
-    >
-      <rect x="0" y="0" width="1000" :height="H" fill="#111c33" />
-      <rect
-        v-for="s in sections"
-        :key="s.id"
-        :x="x(s.startMs)"
-        y="0"
-        :width="Math.max(0, x(s.endMs) - x(s.startMs))"
-        :height="H"
-        :fill="s.color"
-        opacity="0.18"
-      />
-      <line
-        v-for="s in sections.slice(1)"
-        :key="'b' + s.id"
-        :x1="x(s.startMs)"
-        :x2="x(s.startMs)"
-        y1="0"
-        :y2="H"
-        stroke="#475569"
-        stroke-width="1"
-        vector-effect="non-scaling-stroke"
-      />
-      <rect
-        v-for="(b, i) in blocks"
-        :key="'l' + i"
-        :x="x(b.start)"
-        y="8"
-        :width="Math.max(2, x(b.end) - x(b.start))"
-        :height="H - 16"
-        :fill="b.color"
-        opacity="0.75"
-        rx="1"
-      />
-      <line
-        :x1="x(nowMs)"
-        :x2="x(nowMs)"
-        y1="0"
-        :y2="H"
-        stroke="#f8fafc"
-        stroke-width="2"
-        vector-effect="non-scaling-stroke"
-      />
-    </svg>
+    <div ref="box" class="relative h-11">
+      <svg
+        data-testid="song-strip"
+        role="slider"
+        tabindex="0"
+        aria-label="Position in the beat"
+        :aria-valuemin="0"
+        :aria-valuemax="Math.round(durationMs / 1000)"
+        :aria-valuenow="Math.round(nowMs / 1000)"
+        :aria-valuetext="fmt(nowMs)"
+        :viewBox="`0 0 1000 ${H}`"
+        preserveAspectRatio="none"
+        class="absolute inset-0 block w-full h-full cursor-pointer rounded touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+        @pointerdown="down"
+        @pointermove="move"
+        @pointerup="up"
+        @pointercancel="cancel"
+        @keydown.left.prevent="emit('seek', Math.max(0, nowMs - 5000))"
+        @keydown.right.prevent="emit('seek', Math.min(durationMs, nowMs + 5000))"
+      >
+        <rect x="0" y="0" width="1000" :height="H" fill="#111c33" />
+        <rect
+          v-for="s in sections"
+          :key="s.id"
+          data-testid="strip-section"
+          :x="x(s.startMs)"
+          y="0"
+          :width="Math.max(0, x(s.endMs) - x(s.startMs))"
+          :height="H"
+          :fill="s.color"
+          :opacity="s.id === currentId ? 0.34 : 0.14"
+        />
+        <line
+          v-for="b in bars"
+          :key="'g' + b"
+          :x1="x(b)"
+          :x2="x(b)"
+          :y1="H - 7"
+          :y2="H"
+          stroke="#94a3b8"
+          stroke-opacity="0.45"
+          stroke-width="1"
+          vector-effect="non-scaling-stroke"
+        />
+        <rect
+          v-for="b in blocks"
+          :key="'l' + b.line"
+          :x="x(b.start)"
+          y="14"
+          :width="Math.max(2, x(b.end) - x(b.start))"
+          :height="H - 24"
+          :fill="b.color"
+          :opacity="b.line === targetLine ? 1 : 0.7"
+          :stroke="b.line === targetLine ? '#f8fafc' : 'none'"
+          stroke-width="1"
+          vector-effect="non-scaling-stroke"
+          rx="1"
+        />
+        <line
+          :x1="x(nowMs)"
+          :x2="x(nowMs)"
+          y1="0"
+          :y2="H"
+          stroke="#f8fafc"
+          stroke-width="2"
+          vector-effect="non-scaling-stroke"
+        />
+      </svg>
+      <!-- Names in HTML, not SVG: the SVG stretches to the width, text would too -->
+      <span
+        v-for="s in labelled"
+        :key="'n' + s.id"
+        class="absolute top-0.5 pointer-events-none text-[9px] font-semibold leading-none truncate"
+        :style="{ left: `calc(${pct(s.startMs)}% + 3px)`, maxWidth: `calc(${pct(s.endMs - s.startMs)}% - 6px)`, color: s.color }"
+      >
+        {{ s.name }}
+      </span>
+      <!-- Section boundaries: a wide invisible handle around each line -->
+      <button
+        v-for="(s, i) in sections.slice(1)"
+        :key="'h' + s.id"
+        type="button"
+        data-testid="section-boundary"
+        :aria-label="`Move where ${s.name} starts (now ${fmt(s.startMs)})`"
+        class="absolute top-0 bottom-0 w-6 -ml-3 cursor-ew-resize touch-none group focus:outline-none"
+        :style="{ left: pct(s.startMs) + '%' }"
+        @pointerdown.stop="grab($event, i + 1)"
+        @pointermove="drag"
+        @pointerup="release"
+        @pointercancel="release"
+        @keydown.left.prevent="nudge(i + 1, -1000)"
+        @keydown.right.prevent="nudge(i + 1, 1000)"
+      >
+        <span
+          class="absolute left-1/2 top-0 bottom-0 -ml-px w-0.5 rounded group-hover:bg-slate-100 group-focus-visible:bg-violet-300"
+          :class="moving === i + 1 ? 'bg-slate-100' : 'bg-slate-400/70'"
+        />
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Section } from '@/services/timing'
 
 const props = defineProps<{
   durationMs: number
   nowMs: number
   sections: Section[]
-  /** Placed lines in time order, each with when it ends (the next placed line, capped). */
-  blocks: { start: number; end: number; color: string }[]
+  /** Bar-line times to draw (already thinned out for the width). */
+  bars: number[]
+  /** Placed lines in time order, each with when it ends and its line index. */
+  blocks: { line: number; start: number; end: number; color: string }[]
+  /** The section under the playhead, drawn brighter. */
+  currentId: string | null
+  /** The line Pin will place, outlined. */
+  targetLine: number | null
 }>()
-const emit = defineEmits<{ seek: [ms: number] }>()
+const emit = defineEmits<{
+  /** While scrubbing. */
+  seek: [ms: number]
+  /** A tap (no drag) at this time. */
+  tap: [ms: number]
+  'boundary-move': [index: number, ms: number]
+  'boundary-end': [index: number]
+}>()
 
 const H = 44
 const HINT_KEY = 'fluxury.stripHintSeen'
-const svg = ref<SVGSVGElement>()
-const dragging = ref(false)
+const box = ref<HTMLElement>()
 const hintSeen = ref(readHint())
+let press: { x: number; moved: boolean } | null = null
+const moving = ref<number | null>(null)
 
 function readHint() {
   try {
@@ -105,33 +156,66 @@ function readHint() {
   }
 }
 
-const x = (ms: number) => (props.durationMs > 0 ? (Math.min(Math.max(ms, 0), props.durationMs) / props.durationMs) * 1000 : 0)
+const pct = (ms: number) => (props.durationMs > 0 ? (Math.min(Math.max(ms, 0), props.durationMs) / props.durationMs) * 100 : 0)
+const x = (ms: number) => pct(ms) * 10
 const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms / 1000) % 60)).padStart(2, '0')}`
+/** Only name sections wide enough to read (about 7% of the strip). */
+const labelled = computed(() => props.sections.filter((s) => pct(s.endMs - s.startMs) >= 7))
 
 function msAt(e: PointerEvent) {
-  const r = svg.value!.getBoundingClientRect()
+  const r = box.value!.getBoundingClientRect()
   return Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * props.durationMs)
 }
 
 function down(e: PointerEvent) {
   if (!props.durationMs) return
-  dragging.value = true
-  svg.value?.setPointerCapture(e.pointerId)
+  const el = e.currentTarget as Element
+  el.setPointerCapture(e.pointerId)
+  press = { x: e.clientX, moved: false }
   emit('seek', msAt(e))
 }
 function move(e: PointerEvent) {
-  if (dragging.value) emit('seek', msAt(e))
+  if (!press) return
+  if (Math.abs(e.clientX - press.x) > 6) press.moved = true
+  emit('seek', msAt(e))
 }
-function up() {
-  if (!dragging.value) return
-  dragging.value = false
-  if (!hintSeen.value) {
-    hintSeen.value = true
-    try {
-      localStorage.setItem(HINT_KEY, '1')
-    } catch {
-      // not remembered; the hint shows again next visit
-    }
+function up(e: PointerEvent) {
+  if (!press) return
+  const wasTap = !press.moved
+  press = null
+  if (wasTap) emit('tap', msAt(e))
+  else markHintSeen()
+}
+function cancel() {
+  press = null
+}
+
+function markHintSeen() {
+  if (hintSeen.value) return
+  hintSeen.value = true
+  try {
+    localStorage.setItem(HINT_KEY, '1')
+  } catch {
+    // not remembered; the hint shows again next visit
   }
+}
+
+function grab(e: PointerEvent, index: number) {
+  const el = e.currentTarget as Element
+  el.setPointerCapture(e.pointerId)
+  moving.value = index
+}
+function drag(e: PointerEvent) {
+  if (moving.value != null) emit('boundary-move', moving.value, msAt(e))
+}
+function release() {
+  if (moving.value == null) return
+  const i = moving.value
+  moving.value = null
+  emit('boundary-end', i)
+}
+function nudge(index: number, deltaMs: number) {
+  emit('boundary-move', index, props.sections[index].startMs + deltaMs)
+  emit('boundary-end', index)
 }
 </script>

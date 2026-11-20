@@ -161,3 +161,20 @@ export function nextUnplaced(lines: { text: string; timeMs: number | null }[], f
   for (let i = from + 1; i < lines.length; i++) if (lines[i].timeMs == null && lines[i].text.trim()) return i
   return null
 }
+
+/**
+ * The line the lyrics should follow at `nowMs`: the latest placed line that
+ * has started. It stays on the last placed line once the song passes it.
+ * Null before the first placed line.
+ */
+export function followLine(lines: { timeMs: number | null }[], nowMs: number): number | null {
+  let best: number | null = null
+  let bestT = -Infinity
+  lines.forEach((l, i) => {
+    if (l.timeMs != null && l.timeMs <= nowMs && l.timeMs >= bestT) {
+      best = i
+      bestT = l.timeMs
+    }
+  })
+  return best
+}

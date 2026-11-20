@@ -194,8 +194,14 @@
           :duration-ms="durationMs"
           :now-ms="nowMs"
           :sections="timing.sections"
+          :bars="stripBars"
           :blocks="stripBlocks"
+          :current-id="nowPos?.section.id ?? null"
+          :target-line="targetLine"
           @seek="seekMs"
+          @tap="onStripTap"
+          @boundary-move="onBoundaryMove"
+          @boundary-end="onBoundaryEnd"
         >
           <template #right>
             <div class="flex items-center gap-2 text-[11px]">
@@ -225,6 +231,7 @@
           @select="selectSection"
           @split="splitHere"
           @edit="editSection"
+          @tempo="setSectionTempo"
           @tempo-to-all="tempoToAll"
           @remove="removeSectionWithUndo"
         />
@@ -347,11 +354,11 @@ import { useConnectivity } from '@/composables/useConnectivity'
 import { useTimingMetrics } from '@/composables/useTimingMetrics'
 import { localDraftService, type LocalDraft, type QuillDelta } from '@/services/localDraft'
 import { decodeServerScript, resolveResume } from '@/services/resume'
-import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, timeOrderTarget, moveLine, playingLine, nextUnplaced, MAX_LINE_MS } from '@/services/lineTime'
+import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, timeOrderTarget, moveLine, playingLine, nextUnplaced, followLine, MAX_LINE_MS } from '@/services/lineTime'
 import { getEditorMode, setEditorMode, type EditorMode } from '@/services/editorMode'
 import {
   emptyTiming, decodeTiming, splitAt, removeSection, updateSection, applyTempoToAll,
-  snap, positionOf, sectionAt, type Timing, type Section, type SectionEdit,
+  snap, positionOf, sectionAt, setTempo, moveBoundary, barLines, type Timing, type Section, type SectionEdit,
 } from '@/services/timing'
 import SongStrip from '@/components/SongStrip.vue'
 import SectionPanel from '@/components/SectionPanel.vue'
@@ -604,12 +611,84 @@ const timeDescriber = computed(() => {
 })
 
 const stripBlocks = computed(() => {
-  const placed = lineTimes.value.filter((l) => l.timeMs != null).map((l) => l.timeMs!).sort((a, b) => a - b)
-  return placed.map((start, i) => ({
-    start,
-    end: Math.min(placed[i + 1] ?? Infinity, start + MAX_LINE_MS, durationMs.value),
-    color: sectionAt(timing.value, start)?.color ?? '#8b5cf6',
+  const placed = lineTimes.value
+    .map((l, line) => ({ line, start: l.timeMs }))
+    .filter((p): p is { line: number; start: number } => p.start != null)
+    .sort((a, b) => a.start - b.start)
+  return placed.map((p, i) => ({
+    ...p,
+    end: Math.min(placed[i + 1]?.start ?? Infinity, p.start + MAX_LINE_MS, durationMs.value),
+    color: sectionAt(timing.value, p.start)?.color ?? '#8b5cf6',
   }))
+})
+
+/** Bar lines, at least ~1.2% of the strip apart so they stay readable on a phone. */
+const stripBars = computed(() => barLines(timing.value, durationMs.value * 0.012))
+
+/** Tap on the strip: a pinned line's block picks that line; with Sections open, the section opens. */
+function onStripTap(ms: number) {
+  seekMs(ms)
+  const hit = stripBlocks.value.find((b) => ms >= b.start && ms < b.end)
+  if (hit) {
+    targetLine.value = hit.line
+    followTo(hit.line, true)
+  }
+  const s = sectionAt(timing.value, ms)
+  if (s && sectionsOpen.value) selectedSectionId.value = s.id
+}
+
+let boundaryBefore: Timing | null = null
+function onBoundaryMove(index: number, ms: number) {
+  boundaryBefore ??= timing.value
+  // Shown live while dragging; stored once on release.
+  timing.value = moveBoundary(timing.value, index, ms)
+}
+function onBoundaryEnd(index: number) {
+  const before = boundaryBefore
+  boundaryBefore = null
+  if (!before) return
+  const moved = timing.value.sections[index]
+  commitTiming(timing.value)
+  showPinToast(`“${moved.name}” now starts at ${fmtMs(moved.startMs)}.`, () => commitTiming(before))
+}
+
+function setSectionTempo(id: string, bpm: number | null) {
+  const before = timing.value
+  const filled = before.sections.filter((s) => s.id !== id && s.bpm == null).length
+  commitTiming(setTempo(before, id, bpm))
+  if (bpm != null && filled > 0) {
+    showPinToast(`Tempo ${timing.value.sections.find((s) => s.id === id)?.bpm} BPM, also used for ${filled} other section${filled === 1 ? '' : 's'}.`, () => commitTiming(before))
+  }
+}
+
+// --- Lyrics follow the beat ---
+// While the beat moves (playing or scrubbing), keep the line being played in
+// view: the latest placed line that has started, stopping at the last one.
+// Scrolling or typing yourself pauses this for a few seconds.
+const FOLLOW_PAUSE_MS = 3000
+let followPausedUntil = 0
+const pauseFollow = () => (followPausedUntil = Date.now() + FOLLOW_PAUSE_MS)
+const followIdx = computed(() => followLine(lineTimes.value, nowMs.value))
+
+function followTo(i: number | null, force = false) {
+  if (i == null || !quill.value || !timelineOn.value) return
+  if (!force && Date.now() < followPausedUntil) return
+  const el = quill.value.getLines()[i]?.domNode as HTMLElement | undefined
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const header = document.querySelector('[data-testid="timeline-header"]')?.getBoundingClientRect().bottom ?? 0
+  const player = window.innerHeight - (document.querySelector('[data-testid="beat-player"]')?.getBoundingClientRect().height ?? 0)
+  // Already comfortably in view: leave it, so the page doesn't twitch every line.
+  if (r.top >= header + 8 && r.bottom <= player - 8) return
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  window.scrollTo({ top: window.scrollY + r.top - header - 24, behavior: reduce ? 'auto' : 'smooth' })
+}
+watch(followIdx, (i) => followTo(i))
+onMounted(() => {
+  for (const ev of ['wheel', 'touchmove', 'keydown'] as const) window.addEventListener(ev, pauseFollow, { passive: true })
+})
+onUnmounted(() => {
+  for (const ev of ['wheel', 'touchmove', 'keydown'] as const) window.removeEventListener(ev, pauseFollow)
 })
 
 function seekMs(ms: number) {

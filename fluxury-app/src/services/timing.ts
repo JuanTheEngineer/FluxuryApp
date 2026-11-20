@@ -160,6 +160,47 @@ export function updateSection(t: Timing, id: string, edit: SectionEdit): Timing 
   }
 }
 
+/**
+ * Set one section's tempo. Most beats keep one tempo, so sections that have
+ * no tempo yet take it too; a section with its own tempo (a beat switch) keeps it.
+ */
+export function setTempo(t: Timing, id: string, bpm: number | null): Timing {
+  const v = bpm === null ? null : validBpm(bpm)
+  if (bpm !== null && v === null) return t
+  return {
+    ...t,
+    sections: t.sections.map((s) =>
+      s.id === id ? { ...s, bpm: v, source: 'user' as const } : v !== null && s.bpm === null ? { ...s, bpm: v } : s,
+    ),
+  }
+}
+
+/**
+ * Move the boundary where section `index` starts (index >= 1). It stays at
+ * least MIN_SECTION_MS inside both neighbours.
+ */
+export function moveBoundary(t: Timing, index: number, ms: number): Timing {
+  const s = t.sections
+  if (index < 1 || index >= s.length) return t
+  const at = Math.round(clamp(ms, s[index - 1].startMs + MIN_SECTION_MS, s[index].endMs - MIN_SECTION_MS))
+  const sections = s.map((x, i) => (i === index - 1 ? { ...x, endMs: at } : i === index ? { ...x, startMs: at } : x))
+  return { ...t, sections }
+}
+
+/** Bar-line times inside each section that has a tempo, for drawing the grid. */
+export function barLines(t: Timing, minGapMs: number): number[] {
+  const out: number[] = []
+  for (const s of t.sections) {
+    const b = beatMs(s)
+    if (!b) continue
+    const bar = b * s.beatsPerBar
+    let step = bar
+    while (step < minGapMs) step *= 2 // thin out on a narrow strip: every 2, 4, 8 bars
+    for (let x = s.startMs + step; x < s.endMs - 1; x += step) out.push(Math.round(x))
+  }
+  return out
+}
+
 export function applyTempoToAll(t: Timing, fromId: string): Timing {
   const src = t.sections.find((s) => s.id === fromId)
   if (!src) return t

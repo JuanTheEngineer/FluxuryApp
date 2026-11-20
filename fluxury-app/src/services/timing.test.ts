@@ -140,3 +140,59 @@ describe('decodeTiming: stored data is not trusted', () => {
     expect(contiguous(t)).toBe(true)
   })
 })
+
+import { setTempo, moveBoundary, barLines, MIN_SECTION_MS } from './timing'
+
+describe('tempo is set once for the song', () => {
+  const three = () => split(split(emptyTiming(DUR), 30_000).timing, 90_000).timing
+
+  it('setting one section fills every section without a tempo', () => {
+    const t = setTempo(three(), three().sections[0].id, 111.1)
+    expect(t.sections.map((s) => s.bpm)).toEqual([111.1, 111.1, 111.1])
+  })
+
+  it('a section with its own tempo (a beat switch) keeps it', () => {
+    let t = three()
+    t = setTempo(t, t.sections[2].id, 140) // all three get 140
+    t = setTempo(t, t.sections[0].id, 90) // only the first changes now
+    expect(t.sections.map((s) => s.bpm)).toEqual([90, 140, 140])
+  })
+
+  it('clearing a tempo clears only that section, and bad values are ignored', () => {
+    let t = setTempo(three(), three().sections[0].id, 100)
+    t = setTempo(t, t.sections[1].id, null)
+    expect(t.sections.map((s) => s.bpm)).toEqual([100, null, 100])
+    expect(setTempo(t, t.sections[0].id, 9999)).toBe(t)
+  })
+})
+
+describe('moving a section boundary', () => {
+  const t = split(split(emptyTiming(DUR), 30_000).timing, 90_000).timing
+  it('moves where a section starts, and the one before ends there', () => {
+    const m = moveBoundary(t, 1, 40_000)
+    expect(m.sections.map((s) => [s.startMs, s.endMs])).toEqual([[0, 40_000], [40_000, 90_000], [90_000, DUR]])
+  })
+  it('stops short of the neighbours', () => {
+    expect(moveBoundary(t, 1, 0).sections[1].startMs).toBe(MIN_SECTION_MS)
+    expect(moveBoundary(t, 1, 99_000).sections[1].startMs).toBe(90_000 - MIN_SECTION_MS)
+  })
+  it('ignores the start of the song and unknown indexes', () => {
+    expect(moveBoundary(t, 0, 5000)).toBe(t)
+    expect(moveBoundary(t, 7, 5000)).toBe(t)
+  })
+})
+
+describe('bar lines for the strip', () => {
+  let t = split(emptyTiming(DUR), 10_000).timing
+  t = setTempo(t, t.sections[1].id, 120) // bars every 2 s, both sections
+  it('draws bars inside sections with a tempo', () => {
+    const b = barLines(t, 0)
+    expect(b.slice(0, 3)).toEqual([2000, 4000, 6000]) // section 1 from 0
+    expect(b).toContain(12_000) // section 2 from 10 s
+    expect(b).not.toContain(10_000) // the section line itself is drawn separately
+  })
+  it('thins out to every 2, 4, 8 bars when bars would be too close', () => {
+    const b = barLines(t, 5000)
+    expect(b.slice(0, 2)).toEqual([8000, 18_000]) // every 4 bars (8 s) in each section
+  })
+})

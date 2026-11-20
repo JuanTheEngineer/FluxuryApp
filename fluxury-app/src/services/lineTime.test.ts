@@ -173,3 +173,17 @@ describe('pinning and moving on a real Quill', () => {
     expect(readLineTimes(q).map((l) => l.timeMs)).toEqual([null, 17000, null])
   })
 })
+
+import { followLine } from './lineTime'
+
+describe('followLine: which line the lyrics scroll to', () => {
+  const lines = L(1000, null, 3000, 2000)
+  it('is the latest placed line that has started', () => {
+    expect(followLine(lines, 500)).toBeNull()
+    expect(followLine(lines, 2500)).toBe(3)
+    expect(followLine(lines, 3000)).toBe(2)
+  })
+  it('stays on the last placed line once the song passes it (unlike the highlight)', () => {
+    expect(followLine(lines, 3000 + MAX_LINE_MS * 5)).toBe(2)
+  })
+})
