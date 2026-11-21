@@ -123,3 +123,53 @@ describe('SessionBrowserView', () => {
     expect(names(w)).toEqual(['New song', 'Mid song', 'Old song'])
   })
 })
+
+describe('SessionBrowserView first load (no empty-account flash)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    store.sessions = []
+    store.error = null
+    ;(store as any).sessionsLoaded = false
+  })
+
+  it('shows placeholders, not "No sessions yet", while the list is still loading', async () => {
+    const w = await mountList()
+    expect(w.find('[data-testid="sessions-loading"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('No sessions yet')
+    expect(w.find('input').exists()).toBe(false) // nothing to search yet
+  })
+
+  it('shows the cards once they arrive', async () => {
+    const w = await mountList()
+    store.sessions = [session('s1', 'Verse one', '2026-11-17T10:00:00Z')]
+    ;(store as any).sessionsLoaded = true
+    await flushPromises()
+    expect(w.find('[data-testid="sessions-loading"]').exists()).toBe(false)
+    expect(names(w)).toEqual(['Verse one'])
+  })
+
+  it('says "No sessions yet" only when the list really loaded empty', async () => {
+    ;(store as any).sessionsLoaded = true
+    const w = await mountList()
+    expect(w.text()).toContain('No sessions yet')
+    expect(w.find('[data-testid="sessions-loading"]').exists()).toBe(false)
+  })
+
+  it('a failed first load says so and offers Try again, instead of an empty account', async () => {
+    store.error = 'Network Error'
+    const w = await mountList()
+    expect(w.find('[data-testid="sessions-error"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('No sessions yet')
+    store.fetchSessions.mockClear()
+    await w.find('[data-testid="sessions-error"] button').trigger('click')
+    expect(store.fetchSessions).toHaveBeenCalledTimes(1)
+  })
+
+  it('a search with no match says so, not "No sessions yet"', async () => {
+    store.sessions = [session('s1', 'Verse one', '2026-11-17T10:00:00Z')]
+    const w = await mountList()
+    await w.find('input').setValue('zzz')
+    expect(w.text()).toContain('No sessions match')
+    expect(w.text()).not.toContain('No sessions yet')
+  })
+})

@@ -21,16 +21,48 @@
       </button>
     </div>
 
-    <!-- Search -->
-    <input v-model="search" placeholder="Search sessions..." class="bg-surface-elevated border border-slate-700 text-slate-100 placeholder-slate-500 px-3 py-2 rounded-lg w-full focus:outline-none focus:border-amber-500" />
+    <!-- Search: only once there is something to search -->
+    <input v-if="listState === 'list'" v-model="search" placeholder="Search sessions..." class="bg-surface-elevated border border-slate-700 text-slate-100 placeholder-slate-500 px-3 py-2 rounded-lg w-full focus:outline-none focus:border-amber-500" />
 
-    <!-- Empty state -->
-    <div v-if="sortedFilteredSessions.length === 0" class="text-center py-16">
+    <!-- First load: placeholders shaped like the cards, never an empty account.
+         A list already loaded (coming back from a session) shows at once and refreshes quietly. -->
+    <div
+      v-if="listState === 'loading'"
+      data-testid="sessions-loading"
+      aria-busy="true"
+      class="flex flex-col gap-4 animate-pulse motion-reduce:animate-none"
+    >
+      <span class="sr-only" role="status">Loading your sessions</span>
+      <div v-for="i in 3" :key="i" aria-hidden="true" class="rounded-xl overflow-hidden bg-surface-elevated border border-slate-700">
+        <div class="w-full aspect-[3/1] bg-slate-700/40" />
+        <div class="p-3 space-y-2">
+          <div class="h-4 w-2/5 rounded bg-slate-700/60" />
+          <div class="h-3 w-1/5 rounded bg-slate-700/50" />
+          <div class="h-3 w-1/3 rounded bg-slate-700/40" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Couldn't load and nothing to show: say so, don't pretend the account is empty -->
+    <div v-else-if="listState === 'error'" data-testid="sessions-error" role="alert" class="text-center py-16">
+      <p class="text-slate-300 mb-1">Couldn't load your sessions.</p>
+      <p class="text-slate-500 text-sm mb-4">Your lyrics are safe. Check your connection and try again.</p>
+      <button type="button" class="bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-400 transition-colors" @click="sessionStore.fetchSessions()">
+        Try again
+      </button>
+    </div>
+
+    <!-- Empty state: only when the list really loaded and is empty -->
+    <div v-else-if="listState === 'empty'" class="text-center py-16">
       <p class="text-slate-400 mb-2">No sessions yet</p>
       <RouterLink v-if="authStore.isAuthenticated" to="/beats" class="text-amber-500 text-sm hover:text-amber-400">
         Browse beats to start writing →
       </RouterLink>
     </div>
+
+    <p v-else-if="sortedFilteredSessions.length === 0" class="text-center py-10 text-slate-400 text-sm">
+      No sessions match “{{ search }}”.
+    </p>
 
     <!-- Session cards -->
     <div class="flex flex-col gap-4">
@@ -126,6 +158,19 @@ onMounted(async () => {
 const sortedFilteredSessions = computed(() => {
   const query = search.value.toLowerCase()
   return recentSessions.value.filter((s) => s.name.toLowerCase().includes(query))
+})
+
+/**
+ * What the list area shows. Sessions already in the store (a return visit)
+ * show at once. Otherwise: placeholders until the first load finishes, an
+ * error if it failed, "No sessions yet" only when it loaded and is empty.
+ */
+const listState = computed<'loading' | 'error' | 'empty' | 'list'>(() => {
+  if (visibleSessions.value.length > 0) return 'list'
+  if (sessions.value.length > 0) return 'empty' // all hidden by a pending delete
+  if (sessionStore.sessionsLoaded) return 'empty'
+  if (sessionStore.error) return 'error'
+  return 'loading'
 })
 
 const openSession = (session: SessionSummary) => {

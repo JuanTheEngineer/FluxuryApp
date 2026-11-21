@@ -14,6 +14,12 @@ import { localDraftService } from '@/services/localDraft'
 export const useSessionStore = defineStore('sessionStore', {
   state: () => ({
     sessions: [] as SessionSummary[],
+    /**
+     * True once the session list has loaded at least once since the app
+     * started. Until then an empty list means "not here yet", not "no
+     * sessions", so the list shows placeholders instead of an empty account.
+     */
+    sessionsLoaded: false,
     activeSession: null as GetSessionResponseContent | null,
     isLoading: false,
     error: null as string | null,
@@ -65,6 +71,7 @@ export const useSessionStore = defineStore('sessionStore', {
       try {
         const res = await sessionsApi.listSessions()
         this.sessions = res.data.sessions
+        this.sessionsLoaded = true
         this.setSuccess(`Loaded ${res.data.sessions.length} sessions`)
       } catch (err: any) {
         const errorMessage = err.response?.data?.message || err.message || 'Failed to load sessions'
