@@ -286,3 +286,61 @@ describe('Intro and Outro by dragging the song’s edges', () => {
     expect(withIntro(t, 59_900).sections[1].startMs).toBe(60_000 - MIN_SECTION_MS)
   })
 })
+
+describe('Intro and Outro are special: one of each, always at the song’s ends', () => {
+  const base = () => split(emptyTiming(DUR), 60_000).timing // two ordinary sections
+  const shape = (t: Timing) => t.sections.map((s) => [s.name, s.kind ?? '-', s.startMs, s.endMs])
+
+  it('a second Intro can’t be made: dragging the Intro’s own start changes nothing', () => {
+    const t = withIntro(base(), 10_000)
+    expect(t.sections[0].kind).toBe('intro')
+    expect(withIntro(t, 5000)).toBe(t)
+    const o = withOutro(t, 190_000)
+    expect(withOutro(o, 180_000)).toBe(o)
+    expect(o.sections.filter((s) => s.kind).map((s) => s.kind)).toEqual(['intro', 'outro'])
+  })
+
+  it('new sections are never named Intro or Outro, however many there are', () => {
+    let t = base()
+    for (let k = 1; t.sections.length < MAX_SECTIONS; k++) t = split(t, 60_000 + k * 10_000).timing
+    expect(t.sections.map((s) => s.name)).not.toContain('Intro')
+    expect(t.sections.map((s) => s.name)).not.toContain('Outro')
+  })
+
+  it('splitting the Intro keeps the Intro first; splitting the Outro keeps the Outro last', () => {
+    const t = withOutro(withIntro(base(), 20_000), 160_000)
+    const a = split(t, 8000)
+    expect(shape(a.timing).slice(0, 2)).toEqual([['Intro', 'intro', 0, 8000], [a.section.name, '-', 8000, 20_000]])
+    const b = split(t, 180_000)
+    expect(shape(b.timing).slice(-2)).toEqual([[b.section.name, '-', 160_000, 180_000], ['Outro', 'outro', 180_000, DUR]])
+    expect(contiguous(a.timing) && contiguous(b.timing)).toBe(true)
+  })
+
+  it('the Intro can be removed, and the next section takes the start of the song', () => {
+    const t = withIntro(base(), 20_000)
+    const r = removeSection(t, t.sections[0].id)
+    expect(shape(r)[0]).toEqual([t.sections[1].name, '-', 0, 60_000])
+    expect(withIntro(r, 10_000).sections[0].kind).toBe('intro') // and a new one can be made again
+  })
+
+  it('removing a verse next to the Intro gives its time to the ordinary neighbour, not the Intro', () => {
+    const t = split(withIntro(base(), 20_000), 40_000).timing // Intro 0-20, A 20-40, B 40-60, C 60-200
+    const r = removeSection(t, t.sections[1].id)
+    expect(shape(r).slice(0, 2)).toEqual([['Intro', 'intro', 0, 20_000], [t.sections[2].name, '-', 20_000, 60_000]])
+  })
+
+  it('stored files: kind is kept only for the first/last section; old files are read by name; doubled Intros are merged', () => {
+    const t = decodeTiming(
+      {
+        sections: [
+          { id: 'a', name: 'Intro', startMs: 0 },
+          { id: 'b', name: 'Intro', startMs: 8000 }, // the accidental second Intro
+          { id: 'c', name: 'Verse 1', startMs: 20_000, kind: 'intro' }, // not first: ignored
+          { id: 'd', name: 'Outro', startMs: 180_000 },
+        ],
+      },
+      DUR,
+    )!
+    expect(shape(t)).toEqual([['Intro', 'intro', 0, 20_000], ['Verse 1', '-', 20_000, 180_000], ['Outro', 'outro', 180_000, DUR]])
+  })
+})

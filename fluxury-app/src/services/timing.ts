@@ -19,6 +19,11 @@ export interface Section {
   beatsPerBar: number
   color: string
   source: 'auto' | 'user'
+  /**
+   * The song's Intro (always the first section) or Outro (always the last).
+   * At most one of each. Made by dragging the song's first or last edge.
+   */
+  kind?: 'intro' | 'outro'
 }
 
 export interface Timing {
@@ -36,7 +41,8 @@ export const COLORS = ['#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#22c55e', '#
 /** Shortest section the split allows, so a stray tap can't make a sliver. */
 export const MIN_SECTION_MS = 1000
 
-const DEFAULT_NAMES = ['Intro', 'Verse 1', 'Hook', 'Verse 2', 'Bridge', 'Verse 3', 'Outro']
+/** Names for new sections. Never "Intro" or "Outro": those are the special edge sections. */
+const DEFAULT_NAMES = ['Section 1', 'Verse 1', 'Hook', 'Verse 2', 'Bridge', 'Verse 3', 'Hook 2']
 
 let idCounter = 0
 const newId = () => `s${Date.now().toString(36)}${(idCounter++).toString(36)}`
@@ -88,8 +94,30 @@ export function decodeTiming(raw: unknown, audioDurationMs: number): Timing | nu
   sections.sort((a, b) => a.startMs - b.startMs)
   sections[0].startMs = 0
   // Drop duplicates at the same start, then chain the ends.
-  const unique = sections.filter((s, i) => i === 0 || s.startMs > sections[i - 1].startMs)
+  let unique = sections.filter((s, i) => i === 0 || s.startMs > sections[i - 1].startMs)
   unique.forEach((s, i) => (s.endMs = i + 1 < unique.length ? unique[i + 1].startMs : duration))
+  // Intro and Outro: only the first section can be the Intro and only the last
+  // the Outro. Files saved before `kind` existed are recognised by name. A
+  // second "Intro" or "Outro" right next to it (possible before 2026-11-20) is
+  // merged into it.
+  const raws = r.sections as Record<string, unknown>[]
+  const kindOf = (s: Section) => raws.find((x) => x && x.id === s.id)?.kind
+  const named = (s: Section, n: string) => s.name.toLowerCase() === n
+  if (kindOf(unique[0]) === 'intro' || named(unique[0], 'intro')) {
+    unique[0].kind = 'intro'
+    while (unique.length > 1 && named(unique[1], 'intro') && kindOf(unique[1]) !== 'outro') {
+      unique[0].endMs = unique[1].endMs
+      unique = [unique[0], ...unique.slice(2)]
+    }
+  }
+  const last = () => unique[unique.length - 1]
+  if (unique.length > 1 && (kindOf(last()) === 'outro' || named(last(), 'outro'))) {
+    last().kind = 'outro'
+    while (unique.length > 2 && named(unique[unique.length - 2], 'outro')) {
+      last().startMs = unique[unique.length - 2].startMs
+      unique = [...unique.slice(0, -2), last()]
+    }
+  }
   return { v: 1, durationMs: duration, sections: unique }
 }
 
@@ -100,7 +128,11 @@ export function sectionAt(t: Timing, ms: number): Section | null {
   return list.find((s) => x >= s.startMs && x < s.endMs) ?? list[list.length - 1]
 }
 
-/** Split the section under `atMs` into two. The new one copies its tempo. */
+/**
+ * Split the section under `atMs` into two. The new one copies its tempo and
+ * is never special: splitting the Intro leaves the Intro at the start, and
+ * splitting the Outro leaves the Outro at the end (the new part comes before it).
+ */
 export function splitAt(t: Timing, atMs: number): { timing: Timing; section: Section } | { error: string } {
   if (t.sections.length === 0) {
     const whole = wholeSong(t.durationMs)
@@ -117,28 +149,35 @@ export function splitAt(t: Timing, atMs: number): { timing: Timing; section: Sec
   }
   const i = t.sections.indexOf(s)
   const n = t.sections.length
-  const added: Section = {
-    ...s,
-    id: newId(),
-    name: DEFAULT_NAMES[n] ?? `Section ${n + 1}`,
-    startMs: at,
-    color: COLORS[n % COLORS.length],
-    source: 'user',
+  const fresh = (startMs: number, endMs: number): Section => {
+    const x: Section = { ...s, id: newId(), name: DEFAULT_NAMES[n] ?? `Section ${n + 1}`, startMs, endMs, color: COLORS[n % COLORS.length], source: 'user' }
+    delete x.kind
+    return x
   }
-  const sections = [...t.sections.slice(0, i), { ...s, endMs: at }, added, ...t.sections.slice(i + 1)]
-  return { timing: { ...t, sections }, section: added }
+  // The special section keeps its end of the song; the new, ordinary one takes the other part.
+  const outro = s.kind === 'outro'
+  const made = outro ? fresh(s.startMs, at) : fresh(at, s.endMs)
+  const pair = outro ? [made, { ...s, startMs: at }] : [{ ...s, endMs: at }, made]
+  const sections = [...t.sections.slice(0, i), ...pair, ...t.sections.slice(i + 1)]
+  return { timing: { ...t, sections }, section: made }
 }
 
-/** Remove a section; the one before it (or after, for the first) takes over its time. */
+/**
+ * Remove a section. A neighbour takes over its time: the one before it, but
+ * an ordinary section is preferred over the Intro or Outro, so removing a
+ * verse doesn't make the Intro swallow it.
+ */
 export function removeSection(t: Timing, id: string): Timing {
   const i = t.sections.findIndex((s) => s.id === id)
   if (i < 0) return t
   const sections = t.sections.map((s) => ({ ...s }))
   const [gone] = sections.splice(i, 1)
-  if (sections.length > 0) {
-    if (i > 0) sections[i - 1].endMs = gone.endMs
-    else sections[0].startMs = 0
-  }
+  if (sections.length === 0) return { ...t, sections }
+  const prev = sections[i - 1]
+  const next = sections[i]
+  const usePrev = prev && (!prev.kind || !next || next.kind)
+  if (usePrev) prev.endMs = gone.endMs
+  else next.startMs = gone.startMs
   return { ...t, sections }
 }
 
@@ -191,27 +230,28 @@ export function moveBoundary(t: Timing, index: number, ms: number): Timing {
 export const QUIET_COLOR = '#64748b'
 
 /**
- * Drag the start of the FIRST section later: the part before it becomes an
- * "Intro" (the song stays fully covered). Same tempo as the section it came
- * from. Unchanged if the drag is too small or there are already 12 sections.
+ * Drag the start of the FIRST section later: the part before it becomes the
+ * song's Intro (the song stays fully covered). Same tempo as the section it
+ * came from. Unchanged if there is an Intro already, the drag is too small,
+ * or there are already 12 sections.
  */
 export function withIntro(t: Timing, ms: number): Timing {
   const first = t.sections[0]
-  if (!first || t.sections.length >= MAX_SECTIONS) return t
+  if (!first || first.kind === 'intro' || t.sections.length >= MAX_SECTIONS) return t
   const at = Math.round(Math.min(ms, first.endMs - MIN_SECTION_MS))
   if (at < MIN_SECTION_MS) return t
-  const intro: Section = { ...first, id: newId(), name: 'Intro', startMs: 0, endMs: at, color: QUIET_COLOR, source: 'user' }
+  const intro: Section = { ...first, id: newId(), name: 'Intro', startMs: 0, endMs: at, color: QUIET_COLOR, source: 'user', kind: 'intro' }
   return { ...t, sections: [intro, { ...first, startMs: at }, ...t.sections.slice(1)] }
 }
 
-/** Drag the end of the LAST section earlier: the part after it becomes an "Outro". */
+/** Drag the end of the LAST section earlier: the part after it becomes the song's Outro (only one). */
 export function withOutro(t: Timing, ms: number): Timing {
   const n = t.sections.length
   const last = t.sections[n - 1]
-  if (!last || n >= MAX_SECTIONS) return t
+  if (!last || last.kind === 'outro' || n >= MAX_SECTIONS) return t
   const at = Math.round(Math.max(ms, last.startMs + MIN_SECTION_MS))
   if (t.durationMs - at < MIN_SECTION_MS) return t
-  const outro: Section = { ...last, id: newId(), name: 'Outro', startMs: at, endMs: t.durationMs, color: QUIET_COLOR, source: 'user' }
+  const outro: Section = { ...last, id: newId(), name: 'Outro', startMs: at, endMs: t.durationMs, color: QUIET_COLOR, source: 'user', kind: 'outro' }
   return { ...t, sections: [...t.sections.slice(0, n - 1), { ...last, endMs: at }, outro] }
 }
 

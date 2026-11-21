@@ -173,8 +173,8 @@ const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms /
 /** Only name sections wide enough to read (about 7% of the strip). */
 const labelled = computed(() => props.sections.filter((s) => pct(s.endMs - s.startMs) >= 7))
 /**
- * Grips on both edges of the selected section. The song's own start and end
- * can be dragged too: that makes an Intro or Outro. Keyed by edge, so the grip
+ * Grips on the edges of the selected section. The song's own start and end
+ * can be dragged too, when there is no Intro or Outro yet: that makes one. Keyed by edge, so the grip
  * under the finger survives the Intro appearing mid-drag. Kept inside the
  * strip at its two ends (`shift` = where the line sits inside the grip). At the
  * song's own start and end the grip is narrower (16px instead of 28), so it
@@ -192,7 +192,11 @@ const handles = computed(() => {
       : (ms >= props.durationMs ? `Drag to end ${s.name} earlier (makes an Outro)` : `Move where ${s.name} ends (now ${fmt(ms)})`)
     return { edge: e, ms, shift, width, label, color: s.color }
   }
-  return [edge('start', s.startMs), edge('end', s.endMs)]
+  // The Intro's start and the Outro's end ARE the song's start and end: no grip.
+  const out = []
+  if (s.kind !== 'intro') out.push(edge('start', s.startMs))
+  if (s.kind !== 'outro') out.push(edge('end', s.endMs))
+  return out
 })
 
 function msAt(e: PointerEvent) {

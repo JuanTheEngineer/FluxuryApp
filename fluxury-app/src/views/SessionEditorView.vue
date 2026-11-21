@@ -517,7 +517,13 @@ const lineTimes = shallowRef<{ text: string; timeMs: number | null }[]>([])
 /** The line Pin will place: the one last tapped, or the next unplaced line. */
 const targetLine = ref<number | null>(null)
 /** A short message after Pin and section changes; `undo` reverts that one change. */
-const pinToast = ref<{ text: string; undo?: () => void } | null>(null)
+/**
+ * A short message after Pin and section changes. `undo` reverts that one
+ * change. `kind` says what it reverts, so the Undo can be withdrawn the moment
+ * it would revert the wrong thing (see commitTiming and the text-change hook).
+ */
+const pinToast = ref<{ text: string; undo?: () => void; kind: ToastKind } | null>(null)
+type ToastKind = 'lyrics' | 'timing' | 'info'
 let pinToastTimer: ReturnType<typeof setTimeout> | undefined
 
 const playingIdx = computed(() => playingLine(lineTimes.value, nowMs.value))
@@ -565,8 +571,8 @@ const fmtMs = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms
 /** A lyric's first words, for messages ("Pinned “Woke up with the…” at 0:42"). */
 const snippet = (text = '') => (text.trim().length > 24 ? text.trim().slice(0, 23) + '…' : text.trim())
 
-function showPinToast(text: string, undo?: () => void) {
-  pinToast.value = { text, undo }
+function showPinToast(text: string, undo?: () => void, kind: ToastKind = undo ? 'timing' : 'info') {
+  pinToast.value = { text, undo, kind }
   clearTimeout(pinToastTimer)
   pinToastTimer = setTimeout(() => (pinToast.value = null), 5000)
 }
@@ -581,7 +587,7 @@ function pinTarget() {
   const at = placeLine(from, ms)
   // Move on down the song, so a verse can be pinned line after line.
   targetLine.value = nextUnplaced(lineTimes.value, at) ?? at
-  showPinToast(`Pinned “${snippet(lineTimes.value[at]?.text)}” at ${describeTime(ms).long}.`, undoLyricsEdit)
+  showPinToast(`Pinned “${snippet(lineTimes.value[at]?.text)}” at ${describeTime(ms).long}.`, undoLyricsEdit, 'lyrics')
 }
 
 /**
@@ -616,7 +622,7 @@ function unpinTarget() {
   setLineTime(q, i, null)
   q.history.cutoff()
   refreshLines()
-  showPinToast(`Unpinned “${snippet(lineTimes.value[i]?.text)}”.`, undoLyricsEdit)
+  showPinToast(`Unpinned “${snippet(lineTimes.value[i]?.text)}”.`, undoLyricsEdit, 'lyrics')
 }
 
 function undoLyricsEdit() {
@@ -654,10 +660,18 @@ function onPlayerDuration(seconds: number) {
 function commitTiming(next: Timing) {
   const id = session.value?.id
   if (!id || !quill.value) return
+  // An older section Undo would now revert this change too (it restores the
+  // sections as they were before IT): withdraw it. A message that comes with
+  // this change is shown right after, by the caller.
+  dropTimingUndo()
   timing.value = next
   sessionStore.setScriptExtra(id, 'timing', next)
   // Autosave watches the lyrics; a fresh copy makes it save the new timing too.
   currentDelta.value = quill.value.getContents()
+}
+
+function dropTimingUndo() {
+  if (pinToast.value?.kind === 'timing') pinToast.value = null
 }
 
 const snapMs = (ms: number) => (timing.value.sections.length ? snap(timing.value, ms) : ms)
@@ -770,7 +784,7 @@ function onStripTap(ms: number) {
 // as it was when the drag began, shown live, stored once on release.
 let edgeBefore: Timing | null = null
 function onEdgeMove(edge: 'start' | 'end', ms: number) {
-  const base = (edgeBefore ??= timing.value)
+  const base = (edgeBefore ??= (dropTimingUndo(), timing.value))
   const i = base.sections.findIndex((s) => s.id === selectedSectionId.value)
   if (i < 0) return
   const last = base.sections.length - 1
@@ -1082,6 +1096,9 @@ async function loadSession() {
       currentDelta.value = quill.value!.getContents()
       refreshLines()
       if (source === 'user') targetCursorLine() // the line being written is the one to pin
+      // The Pin message's Undo is Quill's undo: after typing it would undo the
+      // typing, not the pin. Withdraw it as soon as the writer types.
+      if (source === 'user' && pinToast.value?.kind === 'lyrics') pinToast.value = null
     })
     quill.value.on('selection-change', onSelectionChange)
     // A tap where the cursor already is fires no selection-change.

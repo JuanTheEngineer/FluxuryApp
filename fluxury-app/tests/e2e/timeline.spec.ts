@@ -482,3 +482,83 @@ test('Toolbar: Bold and Italic only in the timeline; Clean in the classic editor
   await expect(first.locator('strong')).toHaveCount(0)
   await expect(first).toHaveAttribute('data-time', time!)
 })
+
+test('Sections: one Intro only, it can be removed, and Undo never reverts the wrong change', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await openFirstSession(page)
+  await useTimeline(page)
+  const strip = page.getByTestId('song-strip')
+  await expect(strip).toBeVisible({ timeout: 10_000 })
+  const chips = page.getByTestId('section-chip')
+  const toast = page.getByTestId('pin-toast')
+  const undo = page.getByTestId('pin-undo')
+  const sb = async () => (await strip.boundingBox())!
+  const dragEdge = async (edge: 'start' | 'end', toFrac: number) => {
+    const g = (await page.locator(`[data-testid="section-boundary"][data-edge="${edge}"]`).boundingBox())!
+    const s = await sb()
+    await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(s.x + s.width * toFrac, g.y + g.height / 2, { steps: 6 })
+    await page.mouse.up()
+  }
+
+  // One section for the whole song, then drag its start: the Intro.
+  const s0 = await sb()
+  await page.mouse.click(s0.x + 0.5, s0.y + s0.height / 2)
+  await page.getByTestId('sections-toggle').click()
+  await page.getByTestId('add-section').click()
+  await dragEdge('start', 0.1)
+  await expect(chips).toHaveText(['Intro', 'Section 1'])
+
+  // The Intro has no start grip, and dragging Section 1's start only moves the line between them.
+  await chips.first().click()
+  await expect(page.locator('[data-testid="section-boundary"][data-edge="start"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="section-boundary"][data-edge="end"]')).toHaveCount(1)
+  await chips.nth(1).click()
+  await dragEdge('start', 0.05)
+  await expect(chips).toHaveText(['Intro', 'Section 1']) // still one Intro
+
+  // "+ section here" inside the Intro makes an ordinary section, never a second Intro.
+  await chips.first().click()
+  await chips.first().click() // deselect: the strip only seeks
+  const s1 = await sb()
+  await page.mouse.click(s1.x + s1.width * 0.035, s1.y + s1.height / 2)
+  await page.getByTestId('add-section').click()
+  await expect(chips).toHaveCount(3)
+  await expect(chips.first()).toHaveText('Intro')
+  await expect(chips.filter({ hasText: /^Intro$/ })).toHaveCount(1)
+
+  // A later change withdraws the older Undo: renaming after adding a section
+  // must not leave an Undo that would also wipe the rename.
+  await expect(undo).toBeVisible()
+  await page.getByTestId('section-name').fill('Pre-verse')
+  await page.getByTestId('section-name').press('Enter')
+  await expect(undo).toHaveCount(0)
+  await expect(chips.nth(1)).toHaveText('Pre-verse')
+
+  // Remove the Intro (it's under More): gone, and Undo brings exactly it back.
+  await chips.first().click()
+  if (!(await page.getByTestId('remove-section').isVisible())) await page.getByTestId('section-more').click()
+  await page.getByTestId('remove-section').click()
+  await expect(chips).toHaveText(['Pre-verse', 'Section 1'])
+  await undo.click()
+  await expect(chips).toHaveText(['Intro', 'Pre-verse', 'Section 1'])
+
+  // Remove it for real (Undo re-selected it, so its settings are open already).
+  await expect(chips.first()).toHaveAttribute('aria-pressed', 'true')
+  if (!(await page.getByTestId('remove-section').isVisible())) await page.getByTestId('section-more').click()
+  await page.getByTestId('remove-section').click()
+  await expect(chips).toHaveText(['Pre-verse', 'Section 1'])
+
+  // Pin's Undo is withdrawn as soon as the writer types (it would undo the typing).
+  await page.getByTestId('sections-toggle').click()
+  const first = page.locator('[data-testid="script-editor"] .ql-editor > *').first()
+  await first.click()
+  await page.getByTestId('pin-line').click()
+  await expect(undo).toBeVisible()
+  await page.keyboard.press('End')
+  await page.keyboard.type('!')
+  await expect(toast).toHaveCount(0)
+  await expect(first).toHaveAttribute('data-time', /\d+/) // the pin is still there
+  await expect(first).toContainText('!') // and so is the typing
+})
