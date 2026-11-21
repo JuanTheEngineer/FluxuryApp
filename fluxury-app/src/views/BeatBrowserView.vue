@@ -31,6 +31,9 @@ const filtered = computed(() =>
     )
 )
 
+/** First load still running: show placeholder rows, not "No beats yet". A list already loaded shows at once. */
+const beatsLoading = computed(() => !store.beatsLoaded && store.beats.length === 0 && !store.error)
+
 const submitUrl = async () => {
   isSubmitting.value = true
   try {
@@ -154,8 +157,25 @@ onMounted(() => {
     <!-- Search -->
     <input v-model="search" placeholder="Search beats..." class="bg-surface-elevated border border-slate-700 text-slate-100 placeholder-slate-500 p-2 w-full mb-4 rounded-lg focus:outline-none focus:border-amber-500" />
 
+    <!-- First load: placeholder rows shaped like the beats, never "No beats yet" -->
+    <div
+      v-if="beatsLoading"
+      data-testid="beats-loading"
+      aria-busy="true"
+      class="bg-surface-elevated rounded-xl border border-slate-700 divide-y divide-slate-700 animate-pulse motion-reduce:animate-none"
+    >
+      <span class="sr-only" role="status">Loading beats</span>
+      <div v-for="i in 4" :key="i" aria-hidden="true" class="p-3 flex items-center gap-3">
+        <div class="w-12 h-12 rounded bg-slate-700/50 flex-shrink-0" />
+        <div class="flex-1 space-y-2">
+          <div class="h-4 w-1/2 rounded bg-slate-700/60" />
+          <div class="h-3 w-1/5 rounded bg-slate-700/40" />
+        </div>
+      </div>
+    </div>
+
     <!-- Beat list -->
-    <div class="bg-surface-elevated rounded-xl border border-slate-700 divide-y divide-slate-700">
+    <div v-else class="bg-surface-elevated rounded-xl border border-slate-700 divide-y divide-slate-700">
       <div
           v-for="beat in filtered"
           :key="beat.id"
@@ -212,10 +232,15 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Empty state -->
-    <div v-if="filtered.length === 0" class="text-center py-8 text-slate-500">
-      <p>No beats yet</p>
-      <p v-if="authStore.isAuthenticated" class="text-sm mt-1">Add beats from YouTube to get started</p>
+    <!-- Empty state: only when the list really loaded and is empty -->
+    <div v-if="!beatsLoading && filtered.length === 0" class="text-center py-8 text-slate-500">
+      <template v-if="search && store.beats.length > 0">
+        <p>No beats match “{{ search }}”.</p>
+      </template>
+      <template v-else>
+        <p>No beats yet</p>
+        <p v-if="authStore.isAuthenticated" class="text-sm mt-1">Add beats from YouTube to get started</p>
+      </template>
     </div>
 
     <!-- Write to this beat button (fixed above player) — REMOVED, moved to BeatPlayer -->

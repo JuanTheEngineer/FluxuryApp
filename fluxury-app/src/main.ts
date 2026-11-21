@@ -27,3 +27,14 @@ const app = createApp(App)
 app.use(router)
 app.use(createPinia())
 app.mount('#app')
+
+// The loading screen in index.html stays until the first page is ready (the
+// router waits for the sign-in check), so nothing half-built flashes first.
+router.isReady().finally(() => {
+  requestAnimationFrame(() => {
+    const boot = document.getElementById('boot')
+    if (!boot) return
+    boot.classList.add('gone')
+    setTimeout(() => boot.remove(), 250)
+  })
+})

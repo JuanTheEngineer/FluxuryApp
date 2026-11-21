@@ -1,15 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background:#0f172a;color-scheme:dark">
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js" defer></script>
+    <meta name="theme-color" content="#0f172a">
     <title>Fluxury Song Manager</title>
     <!-- Add any additional meta tags, fonts, or CSS libraries here -->
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      /* Shown from the first frame until the app has rendered its first page
+         (main.ts removes it): dark like the app, never a white flash. */
+      html, body { margin: 0; background: #0f172a; }
+      #boot { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: #0f172a; transition: opacity .2s ease; }
+      #boot.gone { opacity: 0; pointer-events: none; }
+      #boot b { font: 700 22px/1 Montserrat, system-ui, sans-serif; color: #f59e0b; letter-spacing: .01em; }
+      /* The spinner only appears if loading takes over 400 ms, so a fast load doesn't flicker. */
+      #boot i { width: 22px; height: 22px; border: 2.5px solid #334155; border-top-color: #f59e0b; border-radius: 50%; opacity: 0; animation: boot-in 0s .4s forwards, boot-spin .8s linear infinite; }
+      @keyframes boot-in { to { opacity: 1; } }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #boot i { animation: boot-in 0s .4s forwards; } }
+    </style>
 </head>
 <body>
+<div id="boot" role="status" aria-label="Loading Fluxury"><b>Fluxury</b><i></i></div>
 <div id="app"></div>
 <script type="module" src="/src/main.ts"></script>
 <!-- built files will be auto injected -->

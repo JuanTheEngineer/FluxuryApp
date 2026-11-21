@@ -283,6 +283,18 @@
         </button>
         </template>
       </div>
+      <!-- Until the beat's length is known the timeline can't be drawn: hold its
+           place with the same shape, so the lyrics don't jump down when it arrives. -->
+      <div
+        v-else-if="timelineOn && beatStatus !== 'none'"
+        data-testid="timeline-skeleton"
+        aria-hidden="true"
+        class="sticky top-[53px] z-30 -mx-4 px-4 pt-2 pb-2 bg-surface border-b border-slate-800 animate-pulse motion-reduce:animate-none"
+      >
+        <div class="h-8 mb-1.5 flex items-center justify-end"><div class="h-7 w-24 rounded-full bg-slate-800" /></div>
+        <div class="h-11 rounded bg-[#111c33]" />
+        <div class="mt-2 rounded-lg bg-[#111c33]" :class="zoomOpen ? 'h-[72px]' : 'h-[30px]'" />
+      </div>
 
       <!-- Quill Editor — click anywhere to focus. In the timeline view the
            overlay draws each line's time beside it, so the text shifts right. -->

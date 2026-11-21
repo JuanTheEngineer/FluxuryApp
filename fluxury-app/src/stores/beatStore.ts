@@ -5,6 +5,8 @@ import type { ListBeatsResponseContent, BeatSummary } from '@/services/api'
 export const useBeatStore = defineStore('beatStore', {
   state: () => ({
     beats: [] as ListBeatsResponseContent['beats'],
+    /** True once the beat list has loaded at least once; until then empty means "not here yet". */
+    beatsLoaded: false,
     selectedBeat: null as BeatSummary | null,
     isLoading: false,
     error: null as string | null,
@@ -53,6 +55,7 @@ export const useBeatStore = defineStore('beatStore', {
       try {
         const res = await beatsApi.listBeats()
         this.beats = res.data.beats
+        this.beatsLoaded = true
         this.setSuccess(`Loaded ${res.data.beats.length} beats`)
       } catch (err: any) {
         const errorMessage = err.response?.data?.message || err.message || 'Failed to load beats'
