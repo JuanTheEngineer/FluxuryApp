@@ -211,3 +211,14 @@ Tests: 337 unit and integration tests, 6 timeline browser tests (one new: the In
 - The Sections button overlapped the top of the strip by a few pixels; its row has a fixed height and a gap now.
 
 Tests: 339 unit and integration tests; 6 timeline browser tests, now including zoom in/out, the remembered level, labels thinning at 16 bars, and a flick that keeps gliding after release.
+
+### More room to write, and the toolbar (2026-11-20)
+
+- **The timeline shrinks while writing:** scrolling down into the lyrics (wheel or finger, past 120 px) leaves only the song strip; scrolling up, or back to the top, brings the rest back. The direction comes from the writer's own wheel and finger movement, not the scroll position, because the header changing height moves the page by itself (it would flip back and forth), and the lyrics following the beat scroll the page too.
+- **The editor toolbar stays in view** right under the timeline (sticky, following its height). The editor box clips with `overflow: clip` instead of `hidden`, which would stop sticky.
+- **Hide button** for the zoomed-in view: a bold drawn chevron instead of a small ▴ character.
+- **Toolbar assessment** (background agent, 15 browser tests): Bold, Italic, Underline are safe with line times. Lists are safe for data, but Pin's time ordering splits or renumbers them. **Clean (Quill's removeFormat) deleted line times** of the selected line, with a partial selection also of the next line, and with everything selected of every line. Undo restored them. Decisions (Juan): the timeline toolbar keeps **Bold and Italic only** (underline, lists and Clean hidden, Ctrl/Cmd+U blocked; lists and underlines already in a session still show). The classic toolbar keeps every button, with **Clean replaced by `cleanKeepingTimes`**, which clears inline formats and lists but never `time`. A browser test fails with Quill's own Clean (the pin went from 10005 ms to none) and passes with the fix.
+- Known, not handled: typing "1. " or "- " at the start of a line still starts a list (Quill's shortcut) in both views.
+- Noted for the demo or onboarding: Tap tempo is only found by opening Sections and selecting a section.
+
+Tests: 342 unit and integration tests; 8 timeline browser tests.
