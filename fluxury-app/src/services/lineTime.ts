@@ -178,3 +178,27 @@ export function followLine(lines: { timeMs: number | null }[], nowMs: number): n
   })
   return best
 }
+
+/** Inline formats the editor's "remove formatting" button clears. */
+const INLINE_FORMATS = ['bold', 'italic', 'underline', 'strike', 'link', 'color', 'background', 'code', 'script']
+
+/**
+ * The toolbar's "remove formatting" (Clean), without deleting line times.
+ * Quill's own Clean removes every format of the selected lines, the `time`
+ * of a pinned line included, and with a partial selection also the time of
+ * the next line (found in the 2026-11-20 toolbar assessment). This clears the
+ * inline formats and lists only. Undoable, like any edit.
+ */
+export function cleanKeepingTimes(quill: Quill): void {
+  const range = quill.getSelection()
+  if (!range) return
+  if (range.length === 0) {
+    // A cursor: stop the formats that the next typed letters would get.
+    const active = quill.getFormat(range)
+    for (const f of INLINE_FORMATS) if (f in active) quill.format(f, false, 'user')
+    return
+  }
+  const off = Object.fromEntries(INLINE_FORMATS.map((f) => [f, false]))
+  quill.formatText(range.index, range.length, off, 'user')
+  quill.formatLine(range.index, range.length, 'list', false, 'user')
+}

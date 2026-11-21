@@ -4,7 +4,7 @@
        beat; drag the line between two sections to move where one starts. -->
   <div class="select-none">
     <!-- Fixed height with a gap below, so the Sections button never overlaps the strip -->
-    <div class="flex items-center justify-end h-8 mb-1.5">
+    <div v-if="!compact" class="flex items-center justify-end h-8 mb-1.5">
       <slot name="right" />
     </div>
     <div ref="box" class="relative h-11">
@@ -148,6 +148,8 @@ const props = defineProps<{
   selectedId: string | null
   /** The stretch shown in the zoomed-in view, boxed. Null when it's hidden. */
   windowRange?: [number, number] | null
+  /** While writing: only the strip itself, without the row above it. */
+  compact?: boolean
 }>()
 const emit = defineEmits<{
   /** While scrubbing. */

@@ -194,10 +194,14 @@
       </div>
       <p v-else-if="conflictNote" data-testid="conflict-note" class="mt-2 text-xs text-slate-400">{{ conflictNote }}</p>
 
-      <!-- Timeline view: the whole beat at a glance, stays in view while writing -->
+      <!-- Timeline view: the whole beat at a glance, stays in view while writing.
+           Scrolling down into the lyrics shrinks it to just the strip, for more
+           room to write; scrolling up brings the rest back. -->
       <div
         v-if="timelineOn && durationMs > 0"
+        ref="timelineHeaderEl"
         data-testid="timeline-header"
+        :data-compact="headerCompact"
         class="sticky top-[53px] z-30 -mx-4 px-4 pt-2 pb-2 bg-surface border-b border-slate-800"
       >
         <SongStrip
@@ -208,8 +212,9 @@
           :blocks="stripBlocks"
           :current-id="nowPos?.section.id ?? null"
           :target-line="targetLine"
-          :selected-id="sectionsOpen ? selectedSectionId : null"
-          :window-range="zoomOpen ? zoomRange : null"
+          :selected-id="sectionsOpen && !headerCompact ? selectedSectionId : null"
+          :window-range="zoomOpen && !headerCompact ? zoomRange : null"
+          :compact="headerCompact"
           @seek="seekMs"
           @tap="onStripTap"
           @edge-move="onEdgeMove"
@@ -236,6 +241,7 @@
             </div>
           </template>
         </SongStrip>
+        <template v-if="!headerCompact">
         <SectionPanel
           :open="sectionsOpen"
           :timing="timing"
@@ -275,6 +281,7 @@
           <svg aria-hidden="true" width="34" height="10" viewBox="0 0 34 10"><g stroke="#94a3b8"><line x1="1" y1="0" x2="1" y2="10"/><line x1="9" y1="5" x2="9" y2="10"/><line x1="17" y1="0" x2="17" y2="10"/><line x1="25" y1="5" x2="25" y2="10"/><line x1="33" y1="0" x2="33" y2="10"/></g></svg>
           Show zoomed-in view ▾
         </button>
+        </template>
       </div>
 
       <!-- Quill Editor — click anywhere to focus. In the timeline view the
@@ -282,8 +289,9 @@
       <div
         @click="focusEditor"
         data-testid="script-editor"
-        class="relative bg-surface-elevated border border-slate-700 rounded-lg mt-2 min-h-[50vh] overflow-hidden cursor-text"
-        :class="{ 'timeline-editor': timelineOn }"
+        class="relative bg-surface-elevated border border-slate-700 rounded-lg mt-2 min-h-[50vh] cursor-text"
+        :class="timelineOn ? 'timeline-editor overflow-clip' : 'overflow-hidden'"
+        :style="timelineOn ? { '--toolbar-top': toolbarTop + 'px' } : undefined"
       >
         <div ref="editorRef" />
         <LineTimeOverlay
@@ -394,7 +402,7 @@ import { useConnectivity } from '@/composables/useConnectivity'
 import { useTimingMetrics } from '@/composables/useTimingMetrics'
 import { localDraftService, type LocalDraft, type QuillDelta } from '@/services/localDraft'
 import { decodeServerScript, resolveResume } from '@/services/resume'
-import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, timeOrderTarget, moveLine, playingLine, nextUnplaced, followLine, MAX_LINE_MS } from '@/services/lineTime'
+import { registerLineTime, attachLineTimeGuards, readLineTimes, setLineTime, timeOrderTarget, moveLine, playingLine, nextUnplaced, followLine, cleanKeepingTimes, MAX_LINE_MS } from '@/services/lineTime'
 import { getEditorMode, setEditorMode, type EditorMode } from '@/services/editorMode'
 import {
   emptyTiming, decodeTiming, splitAt, removeSection, updateSection, applyTempoToAll,
@@ -808,7 +816,11 @@ function followTo(i: number | null, force = false) {
   const el = quill.value.getLines()[i]?.domNode as HTMLElement | undefined
   if (!el) return
   const r = el.getBoundingClientRect()
-  const header = document.querySelector('[data-testid="timeline-header"]')?.getBoundingClientRect().bottom ?? 0
+  // Below whatever stays on screen at the top: the timeline, and the editor's toolbar under it.
+  const header = Math.max(
+    document.querySelector('[data-testid="timeline-header"]')?.getBoundingClientRect().bottom ?? 0,
+    document.querySelector('[data-testid="script-editor"] .ql-toolbar')?.getBoundingClientRect().bottom ?? 0,
+  )
   const player = window.innerHeight - (document.querySelector('[data-testid="beat-player"]')?.getBoundingClientRect().height ?? 0)
   // Already comfortably in view: leave it, so the page doesn't twitch every line.
   if (r.top >= header + 8 && r.bottom <= player - 8) return
@@ -818,9 +830,71 @@ function followTo(i: number | null, force = false) {
 watch(followIdx, (i) => followTo(i))
 onMounted(() => {
   for (const ev of ['wheel', 'touchmove', 'keydown'] as const) window.addEventListener(ev, pauseFollow, { passive: true })
+  window.addEventListener('wheel', onWheelIntent, { passive: true })
+  window.addEventListener('touchstart', onTouchStart, { passive: true })
+  window.addEventListener('touchmove', onTouchIntent, { passive: true })
+  window.addEventListener('scroll', onScrollTop, { passive: true })
 })
 onUnmounted(() => {
   for (const ev of ['wheel', 'touchmove', 'keydown'] as const) window.removeEventListener(ev, pauseFollow)
+  window.removeEventListener('wheel', onWheelIntent)
+  window.removeEventListener('touchstart', onTouchStart)
+  window.removeEventListener('touchmove', onTouchIntent)
+  window.removeEventListener('scroll', onScrollTop)
+  headerObserver?.disconnect()
+})
+
+// --- More room to write ---
+// Scrolling down into the lyrics shrinks the timeline to just its strip;
+// scrolling up (or back to the top) brings the rest back. The direction comes
+// from the writer's own wheel and finger movement, not from scroll position:
+// the header changing height moves the page by itself, and reading that as a
+// scroll would make it flip back and forth. The lyrics following the beat
+// scroll the page too, and also don't count.
+const COMPACT_AFTER_PX = 120
+const INTENT_PX = 30
+const headerCompact = ref(false)
+let intent = 0
+let touchY: number | null = null
+function onIntent(dy: number) {
+  if (!timelineOn.value || dy === 0) return
+  if (Math.sign(dy) !== Math.sign(intent)) intent = 0
+  intent += dy
+  if (intent > INTENT_PX && window.scrollY > COMPACT_AFTER_PX) headerCompact.value = true
+  else if (intent < -INTENT_PX) headerCompact.value = false
+}
+const inTimeline = (t: EventTarget | null) => t instanceof Element && !!t.closest('[data-testid="timeline-header"]')
+function onWheelIntent(e: WheelEvent) {
+  if (!e.ctrlKey) onIntent(e.deltaY) // ctrl + wheel is a pinch zoom
+}
+function onTouchStart(e: TouchEvent) {
+  // The strip and the zoomed-in view use their own drags: not page scrolling.
+  touchY = e.touches.length === 1 && !inTimeline(e.target) ? e.touches[0].clientY : null
+}
+function onTouchIntent(e: TouchEvent) {
+  if (touchY == null || e.touches.length !== 1) return
+  const y = e.touches[0].clientY
+  onIntent(touchY - y) // finger moving up scrolls down
+  touchY = y
+}
+function onScrollTop() {
+  if (window.scrollY < 40) headerCompact.value = false
+}
+
+// Where the editor's toolbar sticks: just under the timeline, whatever its height.
+const APP_HEADER_PX = 53 // the timeline sticks at top-[53px], under the app header
+const timelineHeaderEl = ref<HTMLElement>()
+const toolbarTop = ref(APP_HEADER_PX)
+let headerObserver: ResizeObserver | null = null
+watch(timelineHeaderEl, (el) => {
+  headerObserver?.disconnect()
+  if (!el || typeof ResizeObserver === 'undefined') {
+    toolbarTop.value = APP_HEADER_PX
+    return
+  }
+  headerObserver = new ResizeObserver(() => (toolbarTop.value = APP_HEADER_PX + el.offsetHeight))
+  headerObserver.observe(el)
+  toolbarTop.value = APP_HEADER_PX + el.offsetHeight
 })
 
 function seekMs(ms: number) {
@@ -938,11 +1012,15 @@ async function loadSession() {
       readOnly: isReadOnly,
       placeholder: isReadOnly ? '' : 'Start writing your lyrics...',
       modules: {
-        toolbar: isReadOnly ? false : [
-          ['bold', 'italic', 'underline'],
-          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-          ['clean']
-        ]
+        toolbar: isReadOnly ? false : {
+          container: [
+            ['bold', 'italic', 'underline'],
+            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+            ['clean']
+          ],
+          // Quill's own Clean deletes line times (toolbar assessment 2026-11-20).
+          handlers: { clean: () => quill.value && cleanKeepingTimes(quill.value) },
+        }
       }
     })
 
@@ -952,6 +1030,20 @@ async function loadSession() {
     // hide the iPhone's suggestion bar (BACKLOG Release 1.1: verify on device).
     quill.value.root.setAttribute('autocorrect', 'off')
     attachLineTimeGuards(quill.value)
+    // Timeline view: only Bold and Italic (toolbar assessment 2026-11-20).
+    // Lists split or renumber when Pin reorders lines, underline is rarely
+    // used in lyrics. Their buttons are hidden by CSS; this stops the keyboard
+    // shortcut too. Lists and underlines already in a session still show.
+    quill.value.root.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (timelineOn.value && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'u') {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+        }
+      },
+      true,
+    )
 
     // Set contents with selection disabled to prevent null offset crash
     // Quill 2.x fires selection-change during setContents which can crash on empty/complex deltas
@@ -1154,6 +1246,20 @@ onUnmounted(() => {
 }
 .timeline-editor .ql-snow .ql-editor.ql-blank::before {
   left: 3.5rem;
+}
+/* Timeline view toolbar: Bold and Italic only (see the keydown guard in loadSession). */
+.timeline-editor .ql-toolbar .ql-underline,
+.timeline-editor .ql-toolbar .ql-list,
+.timeline-editor .ql-toolbar .ql-clean {
+  display: none;
+}
+/* Timeline view: the toolbar stays in view under the timeline while the page
+   scrolls, so the editor never looks cut off. Sticky needs the editor box to
+   clip (overflow: clip), not scroll (overflow: hidden). Above the line times. */
+.timeline-editor .ql-toolbar.ql-snow {
+  position: sticky;
+  top: var(--toolbar-top, 53px);
+  z-index: 20;
 }
 .ql-snow .ql-toolbar {
   border: none !important;

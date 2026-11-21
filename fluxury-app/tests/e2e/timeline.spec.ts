@@ -399,3 +399,86 @@ test('Edges: drag the first section’s start to make an Intro; tapping a block 
   expect(startPct).toBeLessThan(0.55)
   await page.screenshot({ path: test.info().outputPath('edges.png') })
 })
+
+test('More room to write: scrolling down shrinks the timeline to its strip, the toolbar stays in view', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await openFirstSession(page)
+  await useTimeline(page)
+  const header = page.getByTestId('timeline-header')
+  const strip = page.getByTestId('song-strip')
+  await expect(strip).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByTestId('zoom-view')).toBeVisible()
+  const toolbar = page.locator('[data-testid="script-editor"] .ql-toolbar')
+
+  /** The toolbar sits right under the timeline and inside the window. */
+  const toolbarUnderHeader = async () => {
+    const h = (await header.boundingBox())!
+    const t = (await toolbar.boundingBox())!
+    return Math.abs(t.y - (h.y + h.height)) <= 2 && t.y >= 0 ? 'stuck' : `toolbar at ${Math.round(t.y)}, timeline ends ${Math.round(h.y + h.height)}`
+  }
+
+  // Scroll down into the lyrics with the wheel, like a writer would.
+  const editor = (await page.locator('[data-testid="script-editor"] .ql-editor').boundingBox())!
+  await page.mouse.move(editor.x + editor.width / 2, Math.min(editor.y + 200, 600))
+  for (let i = 0; i < 4; i++) {
+    await page.mouse.wheel(0, 150)
+    await page.waitForTimeout(60)
+  }
+  await expect(header).toHaveAttribute('data-compact', 'true')
+  await expect(strip).toBeVisible() // the bird's-eye view stays
+  await expect(page.getByTestId('zoom-view')).toHaveCount(0)
+  await expect(page.getByTestId('sections-toggle')).toHaveCount(0)
+  await expect.poll(toolbarUnderHeader).toBe('stuck')
+  const compactH = (await header.boundingBox())!.height
+  await page.screenshot({ path: test.info().outputPath('compact.png') })
+
+  // Scrolling up a little brings the rest back. The toolbar is never hidden under
+  // the taller timeline (it may sit lower, in its normal place, near the top of the page).
+  await page.mouse.wheel(0, -80)
+  await expect(header).toHaveAttribute('data-compact', 'false')
+  await expect(page.getByTestId('zoom-view')).toBeVisible()
+  expect((await header.boundingBox())!.height).toBeGreaterThan(compactH + 40)
+  await expect
+    .poll(async () => (await toolbar.boundingBox())!.y >= (await header.boundingBox())!.y + (await header.boundingBox())!.height - 2)
+    .toBe(true)
+
+  // Scrolling down again shrinks it again; back at the top it is full size.
+  for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 150)
+  await expect(header).toHaveAttribute('data-compact', 'true')
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await expect(header).toHaveAttribute('data-compact', 'false')
+})
+
+test('Toolbar: Bold and Italic only in the timeline; Clean in the classic editor keeps pins', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 })
+  await openFirstSession(page)
+  await useTimeline(page)
+  const bar = page.locator('[data-testid="script-editor"] .ql-toolbar')
+  await expect(bar.locator('.ql-bold')).toBeVisible()
+  await expect(bar.locator('.ql-italic')).toBeVisible()
+  for (const hidden of ['.ql-underline', '.ql-list', '.ql-clean']) await expect(bar.locator(hidden).first()).toBeHidden()
+
+  // Pin the first line, then select part of it and press Ctrl/Cmd+U: no underline in the timeline.
+  const strip = page.getByTestId('song-strip')
+  await expect(strip).toBeVisible({ timeout: 10_000 })
+  const sb = (await strip.boundingBox())!
+  await page.mouse.click(sb.x + sb.width * 0.05, sb.y + sb.height / 2)
+  const first = page.locator('[data-testid="script-editor"] .ql-editor > *').first()
+  await first.click()
+  await page.getByTestId('pin-line').click()
+  const time = await first.getAttribute('data-time')
+  expect(time).not.toBeNull()
+  await first.click({ clickCount: 3 })
+  await page.keyboard.press('ControlOrMeta+u')
+  await expect(first.locator('u')).toHaveCount(0)
+
+  // Classic editor: all tools are back, and Clean removes formatting but not the pin.
+  await page.getByTestId('session-menu').click()
+  await page.getByTestId('switch-to-classic').click()
+  await expect(bar.locator('.ql-clean')).toBeVisible()
+  await expect(first.locator('strong')).toHaveCount(1) // the demo's "Verse 1:" is bold
+  await first.click({ clickCount: 3 })
+  await bar.locator('.ql-clean').click()
+  await expect(first.locator('strong')).toHaveCount(0)
+  await expect(first).toHaveAttribute('data-time', time!)
+})

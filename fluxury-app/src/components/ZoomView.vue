@@ -71,7 +71,7 @@
         {{ bars }} {{ bars === 1 ? 'bar' : 'bars' }}
       </div>
     </div>
-    <div class="flex-none w-8 flex flex-col gap-0.5">
+    <div class="flex-none w-9 flex flex-col gap-0.5">
       <button
         type="button"
         data-testid="zoom-in"
@@ -100,10 +100,11 @@
         :aria-expanded="true"
         aria-label="Hide the zoomed-in view"
         title="Hide the zoomed-in view"
-        class="flex-1 rounded-b-lg text-[11px] text-slate-400 bg-[#111c33] hover:text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+        class="flex-1 flex items-center justify-center rounded-b-lg text-slate-200 bg-[#111c33] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
         @click="emit('hide')"
       >
-        ▴
+        <!-- A drawn chevron, not a text character: big and bold enough to see -->
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6" /></svg>
       </button>
     </div>
   </div>

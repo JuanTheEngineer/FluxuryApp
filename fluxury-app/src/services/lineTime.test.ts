@@ -187,3 +187,33 @@ describe('followLine: which line the lyrics scroll to', () => {
     expect(followLine(lines, 3000 + MAX_LINE_MS * 5)).toBe(2)
   })
 })
+
+import { cleanKeepingTimes } from './lineTime'
+
+describe('remove formatting keeps line times', () => {
+  it('clears bold, italic, underline and lists, but no line loses its time', () => {
+    q.formatText(0, 7, { bold: true, underline: true }, 'user')
+    q.formatLine(0, 1, 'list', 'ordered', 'user')
+    const timesBefore = readLineTimes(q).map((l) => l.timeMs)
+    q.setSelection(0, 9, 'silent') // part of the first line only: Quill's own Clean also hit the next line
+    cleanKeepingTimes(q)
+    expect(readLineTimes(q).map((l) => l.timeMs)).toEqual(timesBefore)
+    const ops = q.getContents().ops
+    expect(ops.some((o: { attributes?: Record<string, unknown> }) => o.attributes?.bold || o.attributes?.underline || o.attributes?.list)).toBe(false)
+  })
+
+  it('with everything selected, every pin survives', () => {
+    const timesBefore = readLineTimes(q).map((l) => l.timeMs)
+    q.setSelection(0, q.getLength(), 'silent')
+    cleanKeepingTimes(q)
+    expect(readLineTimes(q).map((l) => l.timeMs)).toEqual(timesBefore)
+  })
+
+  it('with only a cursor, it stops bold for the next letters and changes nothing else', () => {
+    q.formatText(0, 4, 'bold', true, 'user')
+    const before = JSON.stringify(q.getContents())
+    q.setSelection(2, 0, 'silent')
+    cleanKeepingTimes(q)
+    expect(JSON.stringify(q.getContents())).toBe(before)
+  })
+})
