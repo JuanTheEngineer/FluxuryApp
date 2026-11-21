@@ -222,3 +222,22 @@ Tests: 339 unit and integration tests; 6 timeline browser tests, now including z
 - Noted for the demo or onboarding: Tap tempo is only found by opening Sections and selecting a section.
 
 Tests: 342 unit and integration tests; 8 timeline browser tests.
+
+### Intro and Outro are special, and Undo (2026-11-20)
+
+Juan made two Intros by accident and couldn't delete one, and found Undo odd around sections.
+
+Causes found:
+- Dragging the start of the first section always made a new Intro, even when that section already was the Intro.
+- New sections took names from a list that included "Intro" and "Outro" (the 7th new section was called "Outro").
+- Every section message's Undo restored the sections as they were before *that* change, so after a later edit (a rename, a colour, a tempo) the old Undo also wiped the later edit. The Pin message's Undo is the editor's undo, so after typing it undid the typing instead of the pin.
+
+Changes:
+- **Intro and Outro are special** (`kind` on the section): at most one of each, the Intro always first and the Outro always last. The Intro has no grip at the song's start and the Outro none at its end, so neither can be doubled. "+ section here" inside them makes an ordinary section, and the Intro stays at the start, the Outro at the end. New sections are never named Intro or Outro.
+- Both can be removed (Remove, under More). The Intro's time goes to the next section. Removing a verse next to the Intro gives its time to the ordinary neighbour, not the Intro.
+- Files saved earlier: the first section named "Intro" becomes the Intro and the last named "Outro" the Outro; a doubled Intro or Outro right next to it is merged into it.
+- **Undo is withdrawn when it would revert the wrong thing:** any later section change removes an older section Undo, and typing removes the Pin Undo. Each message's Undo reverts exactly the change it names.
+
+Known: Cmd/Ctrl+Z undoes lyrics only, never sections. Tapping a selected section chip again closes its settings (also after an Undo re-selects it).
+
+Tests: 353 unit and integration tests (6 new for Intro/Outro, including stored files with two Intros), 9 timeline browser tests (one new: one Intro only, splitting inside it, removing it with Undo, Undo withdrawn after a rename and after typing). With the Intro check switched off, the unit test fails.
